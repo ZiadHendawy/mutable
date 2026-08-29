@@ -1,0 +1,67 @@
+import uuid
+from collections.abc import Sequence
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from app.db import get_tenant_db, get_tenant_id
+from app.models import MemoryPreference
+from app.schemas import MemoryPreferenceCreate, MemoryPreferenceRead
+
+router = APIRouter(prefix="/preferences", tags=["preferences"])
+
+
+@router.post("", response_model=MemoryPreferenceRead, status_code=201)
+def create_preference(
+    payload: MemoryPreferenceCreate,
+    tenant_id: uuid.UUID = Depends(get_tenant_id),
+    db: Session = Depends(get_tenant_db),
+) -> MemoryPreference:
+    data = payload.model_dump(exclude={"supersedes"})
+    preference = MemoryPreference(tenant_id=tenant_id, **data)
+    db.add(preference)
+    db.flush()
+
+    if payload.supersedes is not None:
+        old = db.get(MemoryPreference, payload.supersedes)
+        if old is None:
+            raise HTTPException(status_code=404, detail="Preference to supersede not found")
+        if old.valid_to is not None:
+            raise HTTPException(
+                status_code=409, detail="Preference to supersede is already closed"
+            )
+        old.valid_to = func.now()
+        old.superseded_by = preference.id
+
+    db.flush()
+    db.refresh(preference)
+    return preference
+
+
+@router.get("", response_model=list[MemoryPreferenceRead])
+def list_preferences(db: Session = Depends(get_tenant_db)) -> Sequence[MemoryPreference]:
+    stmt = (
+        select(MemoryPreference)
+        .where(MemoryPreference.valid_to.is_(None))
+        .order_by(MemoryPreference.created_at.desc())
+    )
+    return db.scalars(stmt).all()
+
+
+@router.get("/{preference_id}", response_model=MemoryPreferenceRead)
+def get_preference(
+    preference_id: uuid.UUID, db: Session = Depends(get_tenant_db)
+) -> MemoryPreference:
+    preference = db.get(MemoryPreference, preference_id)
+    if preference is None:
+        raise HTTPException(status_code=404, detail="Preference not found")
+    return preference
+
+
+@router.delete("/{preference_id}", status_code=204)
+def delete_preference(preference_id: uuid.UUID, db: Session = Depends(get_tenant_db)) -> None:
+    preference = db.get(MemoryPreference, preference_id)
+    if preference is None:
+        raise HTTPException(status_code=404, detail="Preference not found")
+    db.delete(preference)
