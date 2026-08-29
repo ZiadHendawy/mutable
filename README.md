@@ -92,7 +92,7 @@ Each milestone ships something runnable and checkable on its own — none depend
 **Ships:** an endpoint that accepts raw text and calls an LLM to extract structured facts/preferences/episodes into the existing schema.
 **Done when:** pasting an unstructured paragraph produces the same typed, versioned rows a structured POST would, with extraction confidence populated and reviewable before commit.
 
-### 9. Answer synthesis
+### 9. Answer synthesis (RAG)
 **Ships:** an optional endpoint that takes retrieved records and generates a prose answer via an LLM, on top of (not instead of) the existing retrieval endpoint.
 **Done when:** a question returns a synthesized answer that cites the specific record IDs it drew from.
 
