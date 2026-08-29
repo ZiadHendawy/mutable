@@ -18,7 +18,8 @@ services:
   api:
     build: .
     environment:
-      DATABASE_URL: postgresql+psycopg://memory_engine:memory_engine@db:5432/memory_engine
+      DATABASE_URL: postgresql+psycopg://memory_engine_app:memory_engine_app@db:5432/memory_engine
+      ADMIN_DATABASE_URL: postgresql+psycopg://memory_engine:memory_engine@db:5432/memory_engine
     ports:
       - "8000:8000"
     depends_on:
