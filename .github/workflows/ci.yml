@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: memory_engine
+          POSTGRES_PASSWORD: memory_engine
+          POSTGRES_DB: memory_engine
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U memory_engine"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg://memory_engine:memory_engine@localhost:5432/memory_engine
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Test
+        run: pytest
