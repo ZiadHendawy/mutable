@@ -6,7 +6,7 @@ A structured-memory API: store facts, preferences, and episodes about a user, an
 
 Most "AI memory" is either a vector-search bolt-on with no schema, or a hand-rolled JSON blob nobody can query reliably. This is neither: memory as typed, temporally-versioned data, with a retrieval layer that knows the difference between "what's true now," "what someone prefers," and "what happened once."
 
-**Status:** milestone 1 (scaffold) done — Docker Compose, migrations, and CI are in place. Schema and the ingestion API land in milestone 2. See the [Roadmap](#roadmap).
+**Status:** milestone 2 (schema + tenant-scoped ingestion) done — all three memory types have full CRUD, enforced by Postgres RLS, with a dedicated cross-tenant isolation test proving it. Search and eval harness land in milestones 3–4. See the [Roadmap](#roadmap).
 
 ## Getting started
 
@@ -19,6 +19,7 @@ docker compose up
 
 - `curl localhost:8000/health` — liveness
 - `curl localhost:8000/health/db` — confirms the API can reach Postgres
+- `curl -X POST localhost:8000/facts -H "X-Tenant-Id: <any-uuid>" -H "Content-Type: application/json" -d '{"content": "...", "confidence": 0.9}'` — every resource endpoint requires this header; a tenant is created implicitly the first time its id is used, no signup step
 
 Tests: `docker compose run --rm api pytest`. Lint: `docker compose run --rm api ruff check .`
 
