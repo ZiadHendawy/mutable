@@ -34,4 +34,23 @@ def get_tenant_db(
         text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
         {"tenant_id": str(tenant_id)},
     )
-    yield db
+    # No signup flow: a tenant becomes real the first time it's used, not
+    # through a separate registration step. Safe because tenants has the
+    # same RLS policy as everything else -- a caller can only ever insert
+    # a row whose id matches the app.tenant_id they just set, i.e. only
+    # ever "register" as themselves.
+    db.execute(
+        text("INSERT INTO tenants (id) VALUES (:tenant_id) ON CONFLICT (id) DO NOTHING"),
+        {"tenant_id": str(tenant_id)},
+    )
+    # Owns the whole transaction on purpose: set_config's scope ends the
+    # moment this transaction commits, so committing early (e.g. right
+    # after the tenant self-insert) would reset app.tenant_id before the
+    # endpoint's own queries ran. Commit once, at the end, so registration
+    # and the endpoint's own writes land atomically together.
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
