@@ -6,6 +6,8 @@ A structured-memory API: store facts, preferences, and episodes about a user, an
 
 Most "AI memory" is either a vector-search bolt-on with no schema, or a hand-rolled JSON blob nobody can query reliably. This is neither: memory as typed, temporally-versioned data, with a retrieval layer that knows the difference between "what's true now," "what someone prefers," and "what happened once."
 
+The broader direction: this is the memory layer for an AI personal assistant that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a real, queryable record of who they are, not guesswork. It stays a useful, standalone API on its own either way.
+
 **Status:** milestone 2 (schema + tenant-scoped ingestion) done — all three memory types have full CRUD, enforced by Postgres RLS, with a dedicated cross-tenant isolation test proving it. Search and eval harness land in milestones 3–4. See the [Roadmap](#roadmap).
 
 ## Getting started
