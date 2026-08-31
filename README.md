@@ -71,8 +71,8 @@ Each milestone ships something runnable and checkable on its own — none depend
 **Done when:** two tenants are seeded through the API, and a direct Postgres session for one tenant provably cannot read the other's rows.
 
 ### 3. Eval dataset & harness v1
-**Ships:** synthetic seed data for two tenants — Tenant A (~100 records across facts/preferences/episodes, ~75 hand-labeled questions with gold record IDs) and Tenant B (~20–30 records, isolation probes only) — seeded through milestone 2's API; a CLI harness that runs both suites against the live API and prints a metrics table with per-question failure diffs.
-**Done when:** the harness runs end-to-end and reports zero cross-tenant leaks (proving milestone 2's RLS in practice), even though Recall/MRR are near-zero — there's no search yet, only CRUD, so retrieval metrics are expected to fail until milestone 4 makes them pass.
+**Ships:** synthetic seed data for two tenants — Tenant A (~100 records across facts/preferences/episodes, ~75 hand-labeled questions with gold record IDs) and Tenant B (~20–30 records, isolation probes only) — seeded through milestone 2's API; a CLI harness that runs both suites against the live API and prints a metrics table with per-question failure diffs. The gold question set gives first-class coverage to preference evolution specifically, the product's core differentiator: a "current preference" question must exclude a superseded record, and a historical question must still retrieve the old one correctly.
+**Done when:** the harness runs end-to-end and reports zero cross-tenant leaks (proving milestone 2's RLS in practice) and correct supersede handling on every preference-evolution question, even though overall Recall/MRR are near-zero, since there's no search yet, only CRUD, and retrieval metrics are expected to fail until milestone 4 makes them pass.
 
 ### 4. Search + routing
 **Ships:** the embedding write path, hybrid (vector + full-text) search per type, the rule-based query router — wired into the same harness from milestone 3.
