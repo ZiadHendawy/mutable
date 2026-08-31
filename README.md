@@ -4,9 +4,9 @@ An AI personal assistant that reliably tracks how a user's mind changes, not jus
 
 ## Why
 
-**The problem:** most "AI memory" fails the same way. It either overwrites a preference when it changes, losing what used to be true, or appends every fact to a vector store with no notion of supersession, so a stale, contradicted preference can resurface as confidently as the current one. Ask most memory-enabled AI tools "what do I want right now" after you've changed your mind more than once, and the answer can't be fully trusted.
+Preferences change over time, and a memory system needs to handle that without losing history or confusing old state with current state. Every fact, preference, and episode here is typed and temporally-versioned: preferences are versioned, not overwritten, so when one changes, the old record is closed out and explicitly linked to its replacement. There's always exactly one current answer, and the full history stays queryable on request. The eval harness scores this directly, not just generic retrieval quality: a "current preference" question must exclude a superseded record, and a historical question must still retrieve the old one correctly.
 
-**What this does about it:** every fact, preference, and episode is typed and temporally-versioned. Preferences specifically are versioned, not silently overwritten — when one changes, the old record is closed out and explicitly linked to its replacement, so the system always has one clear current answer and can still surface the history on request. Multi-tenant and isolated from day one via Postgres Row-Level Security.
+Multi-tenant and isolated from day one, via Postgres Row-Level Security enforced as a database invariant rather than an application-level filter.
 
 **The direction:** this is the memory layer for a full AI personal assistant — one that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a record of who someone is that's actually kept up to date, not guesswork. It's a useful, standalone API on its own either way.
 
