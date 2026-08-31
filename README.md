@@ -1,12 +1,14 @@
-# Personal Memory Engine
+# Mutable
 
-A structured-memory API: store facts, preferences, and episodes about a user, and retrieve exactly the right ones for any natural-language question — multi-tenant and isolated from day one.
+An AI personal assistant that reliably tracks how a user's mind changes, not just what it currently knows.
 
 ## Why
 
-Most "AI memory" is either a vector-search bolt-on with no schema, or a hand-rolled JSON blob nobody can query reliably. This is neither: memory as typed, temporally-versioned data, with a retrieval layer that knows the difference between "what's true now," "what someone prefers," and "what happened once."
+**The problem:** most "AI memory" fails the same way. It either overwrites a preference when it changes, losing what used to be true, or appends every fact to a vector store with no notion of supersession, so a stale, contradicted preference can resurface as confidently as the current one. Ask most memory-enabled AI tools "what do I want right now" after you've changed your mind more than once, and the answer can't be fully trusted.
 
-The broader direction: this is the memory layer for an AI personal assistant that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a real, queryable record of who they are, not guesswork. It stays a useful, standalone API on its own either way.
+**What this does about it:** every fact, preference, and episode is typed and temporally-versioned. Preferences specifically are versioned, not silently overwritten — when one changes, the old record is closed out and explicitly linked to its replacement, so the system always has one clear current answer and can still surface the history on request. Multi-tenant and isolated from day one via Postgres Row-Level Security.
+
+**The direction:** this is the memory layer for a full AI personal assistant — one that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a record of who someone is that's actually kept up to date, not guesswork. It's a useful, standalone API on its own either way.
 
 **Status:** milestone 2 (schema + tenant-scoped ingestion) done — all three memory types have full CRUD, enforced by Postgres RLS, with a dedicated cross-tenant isolation test proving it. Search and eval harness land in milestones 3–4. See the [Roadmap](#roadmap).
 

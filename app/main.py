@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db, get_tenant_db
 from app.routers import episodes, facts, preferences
 
-app = FastAPI(title="Personal Memory Engine")
+app = FastAPI(title="Mutable")
 app.include_router(facts.router)
 app.include_router(preferences.router)
 app.include_router(episodes.router)
