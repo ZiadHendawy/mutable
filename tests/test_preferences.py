@@ -117,3 +117,42 @@ def test_create_preference_rejects_out_of_range_strength() -> None:
         headers=_headers(TENANT_A),
     )
     assert response.status_code == 422
+
+
+def test_create_preference_defaults_valid_from_to_now() -> None:
+    body = _create(TENANT_A)
+    assert body["valid_from"] is not None
+
+
+def test_backdated_supersede_closes_old_at_new_valid_from() -> None:
+    old = _create(TENANT_A, content="vegetarian", valid_from="2018-01-01T00:00:00Z")
+    new = _create(
+        TENANT_A, content="pescatarian", valid_from="2025-04-01T00:00:00Z", supersedes=old["id"]
+    )
+    assert new["valid_from"] == "2025-04-01T00:00:00Z"
+
+    old_after = client.get(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).json()
+    assert old_after["valid_from"] == "2018-01-01T00:00:00Z"
+    # Windows tile exactly: the old one ends where the new one begins.
+    assert old_after["valid_to"] == new["valid_from"]
+    assert old_after["superseded_by"] == new["id"]
+
+
+def test_supersede_rejects_new_valid_from_before_old() -> None:
+    old = _create(TENANT_A, valid_from="2025-01-01T00:00:00Z")
+    response = client.post(
+        "/preferences",
+        json={
+            "content": "earlier",
+            "confidence": 0.5,
+            "strength": 0.0,
+            "valid_from": "2024-01-01T00:00:00Z",
+            "supersedes": old["id"],
+        },
+        headers=_headers(TENANT_A),
+    )
+    assert response.status_code == 422
+
+    # Rejected write is rolled back: the old record is still open.
+    old_after = client.get(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).json()
+    assert old_after["valid_to"] is None

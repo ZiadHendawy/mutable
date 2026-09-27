@@ -9,6 +9,7 @@ class MemoryFactCreate(BaseModel):
     content: str
     confidence: float = Field(ge=0, le=1)
     source: str | None = None
+    valid_from: datetime | None = None
 
 
 class MemoryFactRead(BaseModel):
@@ -29,6 +30,7 @@ class MemoryPreferenceCreate(BaseModel):
     confidence: float = Field(ge=0, le=1)
     strength: float = Field(ge=-1, le=1)
     source: str | None = None
+    valid_from: datetime | None = None
     supersedes: uuid.UUID | None = None
 
 
@@ -53,6 +55,7 @@ class MemoryEpisodeCreate(BaseModel):
     event_time: datetime
     event_time_end: datetime | None = None
     source: str | None = None
+    valid_from: datetime | None = None
 
     @model_validator(mode="after")
     def check_time_order(self) -> Self:

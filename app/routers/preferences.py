@@ -2,7 +2,7 @@ import uuid
 from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_tenant_db, get_tenant_id
@@ -18,10 +18,12 @@ def create_preference(
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     db: Session = Depends(get_tenant_db),
 ) -> MemoryPreference:
-    data = payload.model_dump(exclude={"supersedes"})
+    # exclude_none so an omitted valid_from falls through to the server default.
+    data = payload.model_dump(exclude={"supersedes"}, exclude_none=True)
     preference = MemoryPreference(tenant_id=tenant_id, **data)
     db.add(preference)
     db.flush()
+    db.refresh(preference)
 
     if payload.supersedes is not None:
         old = db.get(MemoryPreference, payload.supersedes)
@@ -31,7 +33,15 @@ def create_preference(
             raise HTTPException(
                 status_code=409, detail="Preference to supersede is already closed"
             )
-        old.valid_to = func.now()
+        if preference.valid_from < old.valid_from:
+            raise HTTPException(
+                status_code=422,
+                detail="Superseding preference cannot be valid before the one it replaces",
+            )
+        # Close the old record exactly where the new one starts, so the two
+        # validity windows tile with no gap or overlap -- a point-in-time
+        # query always finds exactly one of them.
+        old.valid_to = preference.valid_from
         old.superseded_by = preference.id
 
     db.flush()

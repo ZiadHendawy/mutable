@@ -10,7 +10,7 @@ authored against this one. 31, grew up in Toronto, moved to Lisbon 2 years ago. 
 Designer at a fintech startup ("Nordic Pay"), degree in HCI from University of Toronto.
 
 ### Facts
-- Career: Studio Loop (design agency, Toronto, 2019–2023) → Nordic Pay (Lisbon, since June 2024)
+- Career: Studio Loop (design agency, Toronto, 2019–2024) → Nordic Pay (Lisbon, since October 2024)
 - Skills: Figma, prototyping, user research
 - Education: HCI degree, University of Toronto
 - Location: currently lives in Lisbon, Portugal
@@ -20,11 +20,16 @@ Designer at a fintech startup ("Nordic Pay"), degree in HCI from University of T
 
 ### Preferences
 Superseded chains (old → new, both records exist, old one closed out):
-- Used to prefer working from an office → now strongly prefers fully remote (changed after the
-  Lisbon move)
-- Used to be vegetarian → now pescatarian
-- Used to prefer packed, sightseeing-heavy itineraries → now prefers slow travel, fewer places
-  per trip (ties into the Morocco episode below)
+- Used to prefer working from an office (valid from 2019) → now strongly prefers fully remote
+  (from January 2025, a few months after the Lisbon move)
+- Used to be vegetarian (valid from 2016) → now pescatarian (from May 2025) — fish only, still
+  consistent with the shellfish allergy
+- Used to prefer packed, sightseeing-heavy itineraries (valid from 2019) → now prefers slow
+  travel, fewer places per trip (from November 2025, after the Morocco trip below)
+
+Each chain is seeded with backdated `valid_from` values, so the old record's `valid_to` lands on
+the new one's `valid_from` and point-in-time questions ("was she vegetarian in 2023?") have a
+single correct answer.
 
 Stable (current, no supersede):
 - Strongly dislikes early-morning meetings
@@ -48,8 +53,8 @@ Stable (current, no supersede):
 - Dislikes group fitness classes
 
 ### Episodes
-- Started at Nordic Pay, June 2024
 - Moved Toronto → Lisbon, September 2024
+- Started at Nordic Pay, October 2024
 - Gave a talk at a design conference in Berlin, March 2025
 - Adopted a cat, Biscuit, February 2025
 - Friend's wedding in Barcelona, June 2025

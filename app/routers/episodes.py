@@ -18,7 +18,7 @@ def create_episode(
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     db: Session = Depends(get_tenant_db),
 ) -> MemoryEpisode:
-    episode = MemoryEpisode(tenant_id=tenant_id, **payload.model_dump())
+    episode = MemoryEpisode(tenant_id=tenant_id, **payload.model_dump(exclude_none=True))
     db.add(episode)
     db.flush()
     db.refresh(episode)

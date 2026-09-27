@@ -18,7 +18,7 @@ def create_fact(
     tenant_id: uuid.UUID = Depends(get_tenant_id),
     db: Session = Depends(get_tenant_db),
 ) -> MemoryFact:
-    fact = MemoryFact(tenant_id=tenant_id, **payload.model_dump())
+    fact = MemoryFact(tenant_id=tenant_id, **payload.model_dump(exclude_none=True))
     db.add(fact)
     db.flush()
     db.refresh(fact)

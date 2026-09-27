@@ -82,3 +82,17 @@ def test_create_fact_rejects_out_of_range_confidence() -> None:
 def test_facts_require_tenant_header() -> None:
     response = client.get("/facts/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 422
+
+
+def test_create_fact_with_backdated_valid_from() -> None:
+    response = client.post(
+        "/facts",
+        json={
+            "content": "lives in Lisbon",
+            "confidence": 0.9,
+            "valid_from": "2024-09-01T00:00:00Z",
+        },
+        headers=_headers(TENANT_A),
+    )
+    assert response.status_code == 201
+    assert response.json()["valid_from"] == "2024-09-01T00:00:00Z"

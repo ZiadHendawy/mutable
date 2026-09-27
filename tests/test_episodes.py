@@ -94,3 +94,8 @@ def test_create_episode_requires_event_time() -> None:
         headers=_headers(TENANT_A),
     )
     assert response.status_code == 422
+
+
+def test_create_episode_with_backdated_valid_from() -> None:
+    body = _create(TENANT_A, valid_from="2025-06-01T00:00:00Z")
+    assert body["valid_from"] == "2025-06-01T00:00:00Z"
