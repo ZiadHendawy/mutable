@@ -40,38 +40,43 @@ at Studio Loop from 2019 to 2024") rather than as an old version of a current on
   2025); volunteers monthly running portfolio reviews at a Lisbon coding bootcamp
 
 ### Preferences
-Superseded chains (old → new, both records exist, old one closed out):
-- Used to prefer working from an office (valid from 2019) → now strongly prefers fully remote
-  (from January 2025, a few months after the Lisbon move)
-- Used to be vegetarian (valid from 2016) → now pescatarian (from May 2025) — fish only, still
-  consistent with the shellfish allergy
-- Used to prefer packed, sightseeing-heavy itineraries (valid from 2019) → now prefers slow
-  travel, fewer places per trip (from November 2025, after the Morocco trip below)
+`strength` carries polarity: positive = likes/prefers, negative = dislikes ("Dislikes
+cilantro" is -0.7).
+
+Superseded chains (old → new, every version exists, old ones closed out at the next one's
+`valid_from`):
+- Work location: prefers an office with the team (2019) → strongly prefers fully remote
+  (January 2025, a few months after the Lisbon move)
+- Diet: vegetarian (2016) → pescatarian (May 2025) — fish only, consistent with the shellfish
+  allergy
+- Travel: packed, sightseeing-heavy itineraries (2019) → slow travel, fewer places per trip
+  (November 2025, after the Morocco trip)
+- Exercise: running (2021) → strength training over cardio (July 2025, after a knee strain
+  following the half-marathon)
+- Employer type: established companies (2017) → small startups (June 2024, when she accepted
+  Nordic Pay's offer)
+- Design tool: Sketch (2017) → Figma (March 2020, when teams went remote and needed real-time
+  collaboration)
+- Caffeine, three versions: strong black coffee, several a day (2013) → one flat white a day
+  (2021) → tea over coffee, mostly green tea (November 2024)
+- Reading: physical books (2015) → e-reader (August 2024, left her books behind when moving)
 
 Each chain is seeded with backdated `valid_from` values, so the old record's `valid_to` lands on
 the new one's `valid_from` and point-in-time questions ("was she vegetarian in 2023?") have a
 single correct answer.
 
 Stable (current, no supersede):
-- Strongly dislikes early-morning meetings
-- Prefers direct, low-context communication over lengthy back-and-forth
-- Prefers projects centered on user research over pure visual polish
-- Mildly prefers small startups over large companies
-- Prefers tea over coffee
-- Dislikes cilantro
-- Mildly enjoys spicy food
-- Prefers small gatherings over large parties
-- Dislikes small talk
-- Prefers minimalist home decor
-- Likes having plants around her living space
-- Prefers podcasts over music while working
-- Enjoys true-crime documentaries
-- Prefers subtitles on, even for English-language shows
-- Prefers a window seat on flights
-- Prefers boutique hotels over chain hotels
-- Prefers strength training over cardio
-- Prefers working out in the morning
-- Dislikes group fitness classes
+- Work: strongly dislikes early-morning meetings; prefers direct, low-context communication;
+  prefers written async updates over status meetings (near-neighbor to the previous one);
+  prefers user-research-heavy projects over pure visual polish; prefers dark mode; keeps phone
+  notifications off except for family
+- Food: dislikes cilantro; mildly enjoys spicy food; prefers cooking at home on weeknights
+- Social: prefers small gatherings over large parties; dislikes small talk
+- Home: minimalist decor; likes plants around; prefers cats over dogs
+- Media: podcasts over music while working; enjoys true-crime documentaries; subtitles on,
+  even for English-language shows
+- Travel: window seat on flights; boutique hotels over chains
+- Fitness: works out in the morning, before work; dislikes group fitness classes
 
 ### Episodes
 - Moved Toronto → Lisbon, September 2024

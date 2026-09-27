@@ -124,6 +124,18 @@ facts:
     valid_from: 2025-10-01
 
 preferences:
+  # Supersede chains -- each old version precedes its replacement (see dataset.py)
+  - key: maya.pref.work_location.v1
+    content: Prefers working from an office, in person with the team
+    confidence: 0.85
+    strength: 0.6
+    valid_from: 2019-05-01
+  - key: maya.pref.work_location.v2
+    content: Strongly prefers working fully remote, from her home office
+    confidence: 0.9
+    strength: 0.9
+    valid_from: 2025-01-06
+    supersedes: maya.pref.work_location.v1
   - key: maya.pref.diet.v1
     content: Is vegetarian
     confidence: 0.9
@@ -135,6 +147,173 @@ preferences:
     strength: 0.8
     valid_from: 2025-05-01
     supersedes: maya.pref.diet.v1
+  - key: maya.pref.travel_style.v1
+    content: >-
+      Prefers packed, sightseeing-heavy travel itineraries that cover as many places as
+      possible
+    confidence: 0.85
+    strength: 0.7
+    valid_from: 2019-01-01
+  - key: maya.pref.travel_style.v2
+    content: "Prefers slow travel: fewer places per trip, staying longer in each"
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2025-11-01
+    supersedes: maya.pref.travel_style.v1
+  - key: maya.pref.exercise.v1
+    content: Prefers running as her main form of exercise
+    confidence: 0.85
+    strength: 0.7
+    valid_from: 2021-03-01
+  - key: maya.pref.exercise.v2
+    content: Prefers strength training over cardio
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2025-07-01
+    supersedes: maya.pref.exercise.v1
+  - key: maya.pref.employer_type.v1
+    content: Prefers working at established companies for the stability and structure
+    confidence: 0.75
+    strength: 0.5
+    valid_from: 2017-06-01
+  - key: maya.pref.employer_type.v2
+    content: Mildly prefers small startups over large companies
+    confidence: 0.8
+    strength: 0.4
+    valid_from: 2024-06-01
+    supersedes: maya.pref.employer_type.v1
+  - key: maya.pref.design_tool.v1
+    content: Prefers Sketch for UI design work
+    confidence: 0.85
+    strength: 0.6
+    valid_from: 2017-06-01
+  - key: maya.pref.design_tool.v2
+    content: Prefers Figma for UI design, mainly for real-time collaboration
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2020-03-15
+    supersedes: maya.pref.design_tool.v1
+  - key: maya.pref.caffeine.v1
+    content: Prefers strong black coffee, several cups a day
+    confidence: 0.8
+    strength: 0.7
+    valid_from: 2013-09-01
+  - key: maya.pref.caffeine.v2
+    content: Has cut down to one flat white a day
+    confidence: 0.8
+    strength: 0.4
+    valid_from: 2021-01-15
+    supersedes: maya.pref.caffeine.v1
+  - key: maya.pref.caffeine.v3
+    content: Prefers tea over coffee, mostly green tea, and mostly avoids coffee
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2024-11-01
+    supersedes: maya.pref.caffeine.v2
+  - key: maya.pref.reading.v1
+    content: Prefers reading physical books over e-readers
+    confidence: 0.8
+    strength: 0.6
+    valid_from: 2015-01-01
+  - key: maya.pref.reading.v2
+    content: Prefers reading on an e-reader
+    confidence: 0.85
+    strength: 0.6
+    valid_from: 2024-08-15
+    supersedes: maya.pref.reading.v1
+
+  # Stable -- current, never superseded
+  - key: maya.pref.early_meetings
+    content: Strongly dislikes early-morning meetings
+    confidence: 0.95
+    strength: -0.9
+    valid_from: 2019-01-01
+  - key: maya.pref.communication
+    content: Prefers direct, low-context communication over lengthy back-and-forth
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2019-01-01
+  - key: maya.pref.async_updates
+    content: Prefers written async updates over status meetings
+    confidence: 0.85
+    strength: 0.7
+    valid_from: 2025-01-06
+  - key: maya.pref.research_projects
+    content: Prefers projects centered on user research over pure visual polish
+    confidence: 0.85
+    strength: 0.7
+    valid_from: 2021-01-01
+  - key: maya.pref.dark_mode
+    content: Prefers dark mode in apps and code editors
+    confidence: 0.8
+    strength: 0.5
+  - key: maya.pref.notifications
+    content: Keeps phone notifications off except for messages from family
+    confidence: 0.8
+    strength: 0.6
+    valid_from: 2025-03-01
+  - key: maya.pref.cilantro
+    content: Dislikes cilantro
+    confidence: 0.9
+    strength: -0.7
+  - key: maya.pref.spicy_food
+    content: Mildly enjoys spicy food
+    confidence: 0.8
+    strength: 0.4
+  - key: maya.pref.cooking
+    content: Prefers cooking at home on weeknights over eating out
+    confidence: 0.8
+    strength: 0.6
+    valid_from: 2024-10-01
+  - key: maya.pref.gatherings
+    content: Prefers small gatherings over large parties
+    confidence: 0.9
+    strength: 0.7
+  - key: maya.pref.small_talk
+    content: Dislikes small talk
+    confidence: 0.85
+    strength: -0.6
+  - key: maya.pref.decor
+    content: Prefers minimalist home decor
+    confidence: 0.85
+    strength: 0.6
+  - key: maya.pref.plants
+    content: Likes having plants around her living space
+    confidence: 0.85
+    strength: 0.6
+  - key: maya.pref.cats_dogs
+    content: Prefers cats over dogs
+    confidence: 0.8
+    strength: 0.5
+  - key: maya.pref.work_audio
+    content: Prefers listening to podcasts over music while working
+    confidence: 0.8
+    strength: 0.5
+  - key: maya.pref.true_crime
+    content: Enjoys true-crime documentaries
+    confidence: 0.85
+    strength: 0.6
+  - key: maya.pref.subtitles
+    content: Prefers subtitles on, even for English-language shows
+    confidence: 0.9
+    strength: 0.7
+  - key: maya.pref.window_seat
+    content: Prefers a window seat on flights
+    confidence: 0.9
+    strength: 0.6
+  - key: maya.pref.hotels
+    content: Prefers boutique hotels over chain hotels
+    confidence: 0.85
+    strength: 0.6
+  - key: maya.pref.workout_time
+    content: Prefers working out in the morning, before starting work
+    confidence: 0.85
+    strength: 0.6
+    valid_from: 2025-07-01
+  - key: maya.pref.group_fitness
+    content: Dislikes group fitness classes
+    confidence: 0.85
+    strength: -0.6
 
 episodes:
   - key: maya.ep.morocco_trip
