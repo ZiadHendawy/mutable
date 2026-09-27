@@ -9,9 +9,11 @@ score answers (the API assigns ids; the dataset only knows keys).
 import argparse
 import json
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 
 import httpx
+from pydantic import BaseModel
 
 from eval.dataset import PersonaRecords, load_persona
 
@@ -60,12 +62,12 @@ def seed_persona(client: httpx.Client, records: PersonaRecords) -> SeededPersona
     return SeededPersona(tenant_id=tenant_id, ids=ids)
 
 
-def _payload(record, exclude: set[str] = frozenset()) -> dict:
+def _payload(record: BaseModel, exclude: Collection[str] = ()) -> dict:
     return record.model_dump(mode="json", exclude={"key", *exclude}, exclude_none=True)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Seed personas into a running API.")
     parser.add_argument("personas", nargs="+", help="directory names under eval/data/")
     parser.add_argument("--base-url", default="http://localhost:8000")
     args = parser.parse_args()
