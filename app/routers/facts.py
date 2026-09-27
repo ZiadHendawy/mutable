@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_tenant_db, get_tenant_id
+from app.db import TENANT_DB, get_tenant_id
 from app.models import MemoryFact
 from app.schemas import MemoryFactCreate, MemoryFactRead
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/facts", tags=["facts"])
 def create_fact(
     payload: MemoryFactCreate,
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    db: Session = Depends(get_tenant_db),
+    db: Session = TENANT_DB,
 ) -> MemoryFact:
     fact = MemoryFact(tenant_id=tenant_id, **payload.model_dump(exclude_none=True))
     db.add(fact)
@@ -26,7 +26,7 @@ def create_fact(
 
 
 @router.get("", response_model=list[MemoryFactRead])
-def list_facts(db: Session = Depends(get_tenant_db)) -> Sequence[MemoryFact]:
+def list_facts(db: Session = TENANT_DB) -> Sequence[MemoryFact]:
     stmt = (
         select(MemoryFact)
         .where(MemoryFact.valid_to.is_(None))
@@ -36,7 +36,7 @@ def list_facts(db: Session = Depends(get_tenant_db)) -> Sequence[MemoryFact]:
 
 
 @router.get("/{fact_id}", response_model=MemoryFactRead)
-def get_fact(fact_id: uuid.UUID, db: Session = Depends(get_tenant_db)) -> MemoryFact:
+def get_fact(fact_id: uuid.UUID, db: Session = TENANT_DB) -> MemoryFact:
     fact = db.get(MemoryFact, fact_id)
     if fact is None:
         raise HTTPException(status_code=404, detail="Fact not found")
@@ -44,7 +44,7 @@ def get_fact(fact_id: uuid.UUID, db: Session = Depends(get_tenant_db)) -> Memory
 
 
 @router.delete("/{fact_id}", status_code=204)
-def delete_fact(fact_id: uuid.UUID, db: Session = Depends(get_tenant_db)) -> None:
+def delete_fact(fact_id: uuid.UUID, db: Session = TENANT_DB) -> None:
     fact = db.get(MemoryFact, fact_id)
     if fact is None:
         raise HTTPException(status_code=404, detail="Fact not found")
