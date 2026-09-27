@@ -1,5 +1,8 @@
 # Gold questions for Maya. `gold` lists the record keys a correct top-5 must contain;
 # `must_exclude` lists keys that must not appear at all. Format: eval/dataset.py.
+# Grouped by category; ids are stable once written -- append, don't renumber.
+
+# --- Preference evolution: current (older versions must not surface) -------------------
 
 - id: q001
   question: What's Maya's diet these days?
@@ -7,9 +10,407 @@
   gold: [maya.pref.diet.v2]
   must_exclude: [maya.pref.diet.v1]
 
+- id: q003
+  question: Does Maya prefer working from an office or remotely?
+  category: preference_current
+  gold: [maya.pref.work_location.v2]
+  must_exclude: [maya.pref.work_location.v1]
+
+- id: q004
+  question: What kind of trips does Maya like to take now?
+  category: preference_current
+  gold: [maya.pref.travel_style.v2]
+  must_exclude: [maya.pref.travel_style.v1]
+
+- id: q005
+  question: What's Maya's main form of exercise these days?
+  category: preference_current
+  gold: [maya.pref.exercise.v2]
+  must_exclude: [maya.pref.exercise.v1]
+
+- id: q006
+  question: Would Maya rather work at a startup or a big company?
+  category: preference_current
+  gold: [maya.pref.employer_type.v2]
+  must_exclude: [maya.pref.employer_type.v1]
+
+- id: q007
+  question: Which design tool does Maya prefer?
+  category: preference_current
+  gold: [maya.pref.design_tool.v2]
+  must_exclude: [maya.pref.design_tool.v1]
+
+- id: q008
+  question: How does Maya take her caffeine these days?
+  category: preference_current
+  gold: [maya.pref.caffeine.v3]
+  must_exclude: [maya.pref.caffeine.v1, maya.pref.caffeine.v2]
+
+- id: q009
+  question: Should I bring Maya a coffee or a tea?
+  category: preference_current
+  gold: [maya.pref.caffeine.v3]
+  must_exclude: [maya.pref.caffeine.v1, maya.pref.caffeine.v2]
+
+- id: q010
+  question: Does Maya still read paper books?
+  category: preference_current
+  gold: [maya.pref.reading.v2]
+  must_exclude: [maya.pref.reading.v1]
+
+- id: q011
+  question: I'm booking a trip for Maya -- what does she like when travelling?
+  category: preference_current
+  gold: [maya.pref.travel_style.v2, maya.pref.window_seat, maya.pref.hotels]
+  must_exclude: [maya.pref.travel_style.v1]
+
+# --- Preference evolution: historical (older versions must still be found) -------------
+
 - id: q002
   question: Was Maya vegetarian back in 2023?
   category: preference_historical
   gold: [maya.pref.diet.v1]
   must_exclude: [maya.pref.diet.v2]
   as_of: 2023-06-01
+
+- id: q012
+  question: Did Maya prefer working in an office back in 2022?
+  category: preference_historical
+  gold: [maya.pref.work_location.v1]
+  must_exclude: [maya.pref.work_location.v2]
+  as_of: 2022-06-01
+
+- id: q013
+  question: What did Maya use for UI design before Figma?
+  category: preference_historical
+  gold: [maya.pref.design_tool.v1]
+
+- id: q014
+  question: How much coffee was Maya drinking in 2022?
+  category: preference_historical
+  gold: [maya.pref.caffeine.v2]
+  must_exclude: [maya.pref.caffeine.v1, maya.pref.caffeine.v3]
+  as_of: 2022-06-01
+
+- id: q015
+  question: What was Maya's coffee habit when she was at university?
+  category: preference_historical
+  gold: [maya.pref.caffeine.v1]
+  must_exclude: [maya.pref.caffeine.v2, maya.pref.caffeine.v3]
+  as_of: 2015-01-01
+
+- id: q016
+  question: How did Maya use to plan her trips?
+  category: preference_historical
+  gold: [maya.pref.travel_style.v1]
+
+- id: q017
+  question: What exercise was Maya doing in early 2025?
+  category: preference_historical
+  gold: [maya.pref.exercise.v1]
+  must_exclude: [maya.pref.exercise.v2]
+  as_of: 2025-03-01
+
+- id: q018
+  question: What kind of company did Maya want to work for early in her career?
+  category: preference_historical
+  gold: [maya.pref.employer_type.v1]
+  must_exclude: [maya.pref.employer_type.v2]
+  as_of: 2018-01-01
+
+- id: q019
+  question: Was Maya reading physical books in 2020?
+  category: preference_historical
+  gold: [maya.pref.reading.v1]
+  must_exclude: [maya.pref.reading.v2]
+  as_of: 2020-06-01
+
+- id: q020
+  question: How has Maya's diet changed over time?
+  category: preference_historical
+  gold: [maya.pref.diet.v1, maya.pref.diet.v2]
+
+# --- Facts ------------------------------------------------------------------------------
+
+- id: q021
+  question: Where does Maya live?
+  category: fact
+  gold: [maya.fact.lives_in_lisbon]
+
+- id: q022
+  question: When is Maya's birthday?
+  category: fact
+  gold: [maya.fact.birthday]
+
+- id: q023
+  question: Where did Maya grow up?
+  category: fact
+  gold: [maya.fact.hometown]
+
+- id: q024
+  question: What neighborhood of Lisbon does Maya live in?
+  category: fact
+  gold: [maya.fact.apartment]
+
+- id: q025
+  question: What kind of residence permit does Maya have in Portugal?
+  category: fact
+  gold: [maya.fact.residence_permit]
+
+- id: q026
+  question: What languages does Maya speak?
+  category: fact
+  gold: [maya.fact.languages, maya.fact.learning_portuguese]
+
+- id: q027
+  question: Where did Maya go to university?
+  category: fact
+  gold: [maya.fact.education]
+
+- id: q028
+  question: What's Maya's job title?
+  category: fact
+  gold: [maya.fact.job_title]
+
+- id: q029
+  question: What does Nordic Pay do?
+  category: fact
+  gold: [maya.fact.nordic_pay]
+
+- id: q030
+  question: What is Maya working on at Nordic Pay?
+  category: fact
+  gold: [maya.fact.current_project]
+
+- id: q031
+  question: Who is Maya's manager?
+  category: fact
+  gold: [maya.fact.manager]
+
+- id: q032
+  question: Where did Maya work right before Nordic Pay?
+  category: fact
+  gold: [maya.fact.studio_loop]
+
+- id: q033
+  question: What was Maya's first design job?
+  category: fact
+  gold: [maya.fact.maple_health]
+
+- id: q034
+  question: What are Maya's main design skills?
+  category: fact
+  gold: [maya.fact.skills]
+
+- id: q035
+  question: Who is Maya's partner?
+  category: fact
+  gold: [maya.fact.partner]
+
+- id: q036
+  question: What does Sam do for a living?
+  category: fact
+  gold: [maya.fact.partner_job]
+
+- id: q037
+  question: Does Maya have any siblings?
+  category: fact
+  gold: [maya.fact.brother]
+
+- id: q038
+  question: Where do Maya's parents live?
+  category: fact
+  gold: [maya.fact.parents]
+
+- id: q039
+  question: Who is Maya's closest friend?
+  category: fact
+  gold: [maya.fact.best_friend]
+
+- id: q040
+  question: What is Maya allergic to?
+  category: fact
+  gold: [maya.fact.shellfish_allergy, maya.fact.pollen_allergy]
+
+- id: q041
+  question: What's the name of Maya's cat?
+  category: fact
+  gold: [maya.fact.cat]
+
+- id: q042
+  question: How does Maya get around Lisbon?
+  category: fact
+  gold: [maya.fact.ebike, maya.fact.no_car]
+
+- id: q043
+  question: Does Maya play any instruments?
+  category: fact
+  gold: [maya.fact.guitar]
+
+- id: q044
+  question: Does Maya mentor anyone at work?
+  category: fact
+  gold: [maya.fact.mentoring]
+
+# --- Stable preferences -----------------------------------------------------------------
+
+- id: q045
+  question: How does Maya feel about early-morning meetings?
+  category: preference
+  gold: [maya.pref.early_meetings]
+
+- id: q046
+  question: How does Maya like people to communicate with her at work?
+  category: preference
+  gold: [maya.pref.communication, maya.pref.async_updates]
+
+- id: q047
+  question: What kind of design projects does Maya enjoy most?
+  category: preference
+  gold: [maya.pref.research_projects]
+
+- id: q048
+  question: Does Maya like spicy food?
+  category: preference
+  gold: [maya.pref.spicy_food]
+
+- id: q049
+  question: Would Maya enjoy a big party?
+  category: preference
+  gold: [maya.pref.gatherings, maya.pref.small_talk]
+
+- id: q050
+  question: How does Maya like her home decorated?
+  category: preference
+  gold: [maya.pref.decor, maya.pref.plants]
+
+- id: q051
+  question: What does Maya listen to while she works?
+  category: preference
+  gold: [maya.pref.work_audio]
+
+- id: q052
+  question: What kind of documentaries does Maya like?
+  category: preference
+  gold: [maya.pref.true_crime]
+
+- id: q053
+  question: Does Maya watch shows with subtitles?
+  category: preference
+  gold: [maya.pref.subtitles]
+
+- id: q054
+  question: When does Maya like to work out?
+  category: preference
+  gold: [maya.pref.workout_time]
+
+- id: q055
+  question: Would Maya want to join a spin class?
+  category: preference
+  gold: [maya.pref.group_fitness]
+
+- id: q056
+  question: Is Maya a cat person or a dog person?
+  category: preference
+  gold: [maya.pref.cats_dogs]
+
+- id: q057
+  question: Does Maya usually cook at home or eat out?
+  category: preference
+  gold: [maya.pref.cooking]
+
+# --- Episodes ---------------------------------------------------------------------------
+
+- id: q058
+  question: When did Maya move to Lisbon?
+  category: episode
+  gold: [maya.ep.move_to_lisbon]
+
+- id: q059
+  question: When did Maya start at Nordic Pay?
+  category: episode
+  gold: [maya.ep.nordic_pay_start]
+
+- id: q060
+  question: When did Maya last visit Toronto?
+  category: episode
+  gold: [maya.ep.toronto_dad_birthday]
+
+- id: q061
+  question: Where did Maya travel in October 2025?
+  category: episode
+  gold: [maya.ep.morocco_trip]
+
+- id: q062
+  question: What did Maya do in Berlin in March 2025?
+  category: episode
+  gold: [maya.ep.berlin_talk]
+
+- id: q063
+  question: When did Maya adopt her cat?
+  category: episode
+  gold: [maya.ep.adopted_biscuit]
+
+- id: q064
+  question: How did Maya do in her half-marathon?
+  category: episode
+  gold: [maya.ep.half_marathon]
+
+- id: q065
+  question: What trips has Maya taken with Sam?
+  category: episode
+  gold: [maya.ep.portugal_trip, maya.ep.japan_trip, maya.ep.azores_trip]
+
+- id: q066
+  question: What talks has Maya given?
+  category: episode
+  gold: [maya.ep.berlin_talk, maya.ep.lisbon_meetup_talk]
+
+- id: q067
+  question: Why did Maya move to Lisbon?
+  category: episode
+  gold: [maya.ep.nordic_offer, maya.ep.move_to_lisbon]
+
+- id: q068
+  question: When did Theo last visit Maya?
+  category: episode
+  gold: [maya.ep.theo_visit]
+
+- id: q069
+  question: When did Maya pass her Portuguese exam?
+  category: episode
+  gold: [maya.ep.portuguese_exam]
+
+# --- Cross-type (answer needs more than one record type) --------------------------------
+
+- id: q070
+  question: Why did Maya stop running?
+  category: cross_type
+  gold: [maya.ep.knee_strain, maya.pref.exercise.v2]
+
+- id: q071
+  question: I'm cooking dinner for Maya -- what should I avoid?
+  category: cross_type
+  gold: [maya.pref.diet.v2, maya.fact.shellfish_allergy, maya.pref.cilantro]
+  # Vegetarian-era advice ("no fish") would be wrong now.
+  must_exclude: [maya.pref.diet.v1]
+
+- id: q072
+  question: Why did Maya switch to Figma?
+  category: cross_type
+  gold: [maya.ep.figma_switch, maya.pref.design_tool.v2]
+
+- id: q073
+  question: Why does Maya read on an e-reader now?
+  category: cross_type
+  gold: [maya.ep.book_donation, maya.pref.reading.v2]
+
+- id: q074
+  question: What's Maya's role at Nordic Pay and when did she start?
+  category: cross_type
+  gold: [maya.fact.job_title, maya.ep.nordic_pay_start]
+
+- id: q075
+  question: Tell me about Maya's cat.
+  category: cross_type
+  gold: [maya.fact.cat, maya.ep.adopted_biscuit, maya.ep.biscuit_vet]

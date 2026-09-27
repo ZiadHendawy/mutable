@@ -101,6 +101,20 @@ Toronto visits, two talks, two trips with Sam); and multi-day events via `event_
   exam (June); Toronto for her dad's 65th (July); Biscuit's dental cleaning (Aug); talk at a
   Lisbon design meetup (Sept)
 
+### Gold questions
+75 questions in `eval/data/maya/questions.yaml`, weighted toward the product's differentiator:
+
+| Category | Count | What it checks |
+|---|---|---|
+| `preference_current` | 10 | Latest version of a chain, every older version in `must_exclude` |
+| `preference_historical` | 10 | An older version still retrievable; 7 pinned to an `as_of` date |
+| `fact` | 24 | Point lookups, several with two gold records (both allergies, both languages) |
+| `preference` | 13 | Stable preferences, including near-neighbors (communication vs async updates) |
+| `episode` | 12 | Date lookups, "most recent" (last Toronto visit), multi-record (all talks) |
+| `cross_type` | 6 | "Why" questions pairing a preference change with the episode that caused it |
+
+81 of the 100 records are gold for some question; the other 19 are distractors.
+
 ## Tenant B — Jonas Weber
 
 The light persona: 28 records, isolation probes only, no gold questions. His *content* is
