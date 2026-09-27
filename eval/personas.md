@@ -103,13 +103,22 @@ Toronto visits, two talks, two trips with Sam); and multi-day events via `event_
 
 ## Tenant B — Jonas Weber
 
-The light persona: ~20–30 records, isolation probes only, no gold questions needed. Deliberately
-unrelated to Maya in every dimension — different city, job, age, life details — so that if
-isolation ever broke, the leak would be obviously wrong in the eval report, not a subtle
-near-miss.
+The light persona: 28 records, isolation probes only, no gold questions. His *content* is
+unrelated to Maya's in every dimension — different city, job, age, life details — so a leak
+would be obviously wrong in the eval report, not a subtle near-miss. But his records cover the
+*same topics* Maya's questions ask about (where someone lives, their job, allergies, pets,
+diet, coffee, flight seats, holidays): a leaked record can only show up in Maya's results if it
+would actually rank for her questions, so topic overlap is what gives the isolation probe
+teeth.
 
-- 45, lives in Munich, civil engineer, two teenage children
-- Hobbies: woodworking, prefers classical music, dislikes spicy food
-- Drives an electric car
-- Renovated his kitchen (completed August 2025)
-- Ran a local 10k charity race, May 2025
+- Facts: born November 2, 1980; grew up in Regensburg; lives in Munich; Diplom in civil
+  engineering from TU Munich (2005); senior civil engineer at Brandt & Huber (bridge
+  inspection, since 2010); married to Katrin (chemistry teacher); children Lena (16) and
+  Felix (14); allergic to penicillin; beagle named Bruno; drives an electric car; native
+  German, good English; woodworking workshop in his garage
+- Preferences: one chain — diesel estate cars (2008) → electric (April 2023, when he bought
+  his EV); stable: classical music, dislikes spicy food, strong filter coffee, hearty Bavarian
+  cooking, lakeside camping holidays, aisle seat, starting work early, large family gatherings
+- Episodes: Lake Garda camping holiday (July–Aug 2024); bought the EV (Apr 2023); 10k charity
+  race (May 2025); kitchen renovation (June–Aug 2025); 15 years at Brandt & Huber (Sept 2025);
+  Isar bridge inspection (Mar 2026)

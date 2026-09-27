@@ -1,7 +1,121 @@
 # Jonas Weber -- isolation-only persona, no gold questions (see eval/personas.md).
+# Content deliberately unlike Maya's, but on the same topics her questions ask about,
+# so a leaked record would actually rank in her results. Format: eval/dataset.py.
 persona: Jonas Weber
 
 facts:
+  # Keep first: tests/test_eval_seed.py uses facts[0] as its rejected-record probe.
   - key: jonas.fact.lives_in_munich
     content: Lives in Munich, Germany
     confidence: 0.95
+  - key: jonas.fact.birthday
+    content: Was born on November 2, 1980
+    confidence: 0.95
+  - key: jonas.fact.hometown
+    content: Grew up in Regensburg, Germany
+    confidence: 0.9
+  - key: jonas.fact.education
+    content: Has a Diplom in civil engineering from the Technical University of Munich (2005)
+    confidence: 0.9
+  - key: jonas.fact.job
+    content: >-
+      Works as a senior civil engineer at Brandt & Huber, a Munich structural engineering firm,
+      specializing in bridge inspection
+    confidence: 0.95
+    valid_from: 2010-09-01
+  - key: jonas.fact.wife
+    content: Is married to Katrin, a secondary-school chemistry teacher
+    confidence: 0.95
+  - key: jonas.fact.children
+    content: Has two children, Lena (16) and Felix (14)
+    confidence: 0.95
+  - key: jonas.fact.penicillin_allergy
+    content: Is allergic to penicillin
+    confidence: 0.95
+  - key: jonas.fact.dog
+    content: Has a dog, a beagle named Bruno
+    confidence: 0.9
+  - key: jonas.fact.car
+    content: Drives an electric car
+    confidence: 0.9
+    valid_from: 2023-04-15
+  - key: jonas.fact.languages
+    content: Speaks German natively and good English
+    confidence: 0.9
+  - key: jonas.fact.workshop
+    content: Has a woodworking workshop in his garage
+    confidence: 0.85
+
+preferences:
+  - key: jonas.pref.car.v1
+    content: Prefers diesel estate cars for long family road trips
+    confidence: 0.8
+    strength: 0.6
+    valid_from: 2008-01-01
+  - key: jonas.pref.car.v2
+    content: Prefers driving electric
+    confidence: 0.85
+    strength: 0.7
+    valid_from: 2023-04-15
+    supersedes: jonas.pref.car.v1
+  - key: jonas.pref.classical_music
+    content: Prefers classical music, especially Bach
+    confidence: 0.9
+    strength: 0.8
+  - key: jonas.pref.spicy_food
+    content: Dislikes spicy food
+    confidence: 0.9
+    strength: -0.7
+  - key: jonas.pref.coffee
+    content: Prefers strong filter coffee first thing in the morning
+    confidence: 0.85
+    strength: 0.7
+  - key: jonas.pref.cooking
+    content: Prefers hearty traditional Bavarian cooking
+    confidence: 0.8
+    strength: 0.6
+  - key: jonas.pref.holidays
+    content: Prefers camping holidays by a lake with the family
+    confidence: 0.85
+    strength: 0.7
+  - key: jonas.pref.aisle_seat
+    content: Prefers an aisle seat on flights
+    confidence: 0.85
+    strength: 0.5
+  - key: jonas.pref.early_start
+    content: Likes starting work early, around 7 a.m.
+    confidence: 0.85
+    strength: 0.6
+  - key: jonas.pref.gatherings
+    content: Enjoys large family gatherings
+    confidence: 0.8
+    strength: 0.6
+
+episodes:
+  - key: jonas.ep.bought_ev
+    content: Bought an electric car and sold the family's diesel estate
+    confidence: 0.95
+    event_time: 2023-04-15
+  - key: jonas.ep.lake_garda
+    content: Two-week family camping holiday at Lake Garda
+    confidence: 0.9
+    event_time: 2024-07-27
+    event_time_end: 2024-08-10
+  - key: jonas.ep.charity_10k
+    content: Ran a local 10k charity race in Munich
+    confidence: 0.9
+    event_time: 2025-05-18
+  - key: jonas.ep.kitchen_renovation
+    content: Renovated the family kitchen, doing most of the carpentry himself
+    confidence: 0.9
+    event_time: 2025-06-02
+    event_time_end: 2025-08-29
+  - key: jonas.ep.work_anniversary
+    content: Celebrated 15 years at Brandt & Huber
+    confidence: 0.85
+    event_time: 2025-09-01
+  - key: jonas.ep.bridge_inspection
+    content: Led the safety inspection of a highway bridge over the Isar
+    confidence: 0.9
+    event_time: 2026-03-02
+    event_time_end: 2026-03-13
