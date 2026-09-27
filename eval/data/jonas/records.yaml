@@ -27,7 +27,7 @@ facts:
     content: Is married to Katrin, a secondary-school chemistry teacher
     confidence: 0.95
   - key: jonas.fact.children
-    content: Has two children, Lena (16) and Felix (14)
+    content: Has two children, Lena (born 2010) and Felix (born 2012)
     confidence: 0.95
   - key: jonas.fact.penicillin_allergy
     content: Is allergic to penicillin

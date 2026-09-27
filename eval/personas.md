@@ -1,12 +1,12 @@
-# Eval personas (milestone 3, task 1)
+# Eval personas
 
-Reference for authoring the actual seed data in later tasks. Both personas are entirely
-fictional — no real personal data, per the README's eval contract.
+Design doc for the eval dataset: who the two personas are and why the data is shaped the way it
+is. The records themselves live in `eval/data/<persona>/`. Both personas are entirely fictional
+— no real personal data, per the README's eval contract.
 
 ## Tenant A — Maya Chen
 
-The rich persona: ~100 records across facts/preferences/episodes, ~75 gold questions get
-authored against this one. 31, grew up in Toronto, moved to Lisbon 2 years ago. Senior Product
+The rich persona: 100 records across facts/preferences/episodes, and all 75 gold questions. 31, grew up in Toronto, moved to Lisbon 2 years ago. Senior Product
 Designer at a fintech startup ("Nordic Pay"), degree in HCI from University of Toronto.
 
 ### Facts
@@ -19,7 +19,7 @@ at Studio Loop from 2019 to 2024") rather than as an old version of a current on
   with one room as a home office; holds a Portuguese residence permit for highly qualified
   workers
 - Languages: native English, conversational Mandarin (spoken at home growing up), learning
-  European Portuguese (~A2)
+  European Portuguese (passed A2 in June 2026, working toward B1)
 - Education: Bachelor of Information, University of Toronto, 2017, HCI specialization
 - Career: junior UX designer at Maple Health (Toronto health-tech, 2017–2019) → product
   designer at Studio Loop (Toronto design agency, 2019–2024) → Senior Product Designer at
@@ -94,8 +94,9 @@ Toronto visits, two talks, two trips with Sam); and multi-day events via `event_
   Studio Loop (Aug 2024); moves to Lisbon with Sam (Sept 2024); starts at Nordic Pay (Oct 2024)
 - 2025: goes fully remote and starts Portuguese lessons (Jan); adopts Biscuit (Feb); talk at a
   design conference in Berlin (Mar); Lisbon half-marathon (Apr); knee strain + six weeks of
-  physio, stops running (May–June); Priya's wedding in Barcelona (June); Morocco trip (Oct);
-  holidays with her parents in Toronto (Dec 2025 – Jan 2026)
+  physio, stops running (May–June); Priya's wedding in Barcelona (June); slow solo trip
+  through Morocco that flips her travel style (Oct); holidays with her parents in Toronto
+  (Dec 2025 – Jan 2026)
 - 2026: Theo visits Lisbon (Feb); 31st birthday dinner at home (Mar); the onboarding redesign
   she led launches (Apr); slow ten days in the Azores (May); passes the CIPLE A2 Portuguese
   exam (June); Toronto for her dad's 65th (July); Biscuit's dental cleaning (Aug); talk at a
@@ -127,8 +128,8 @@ teeth.
 
 - Facts: born November 2, 1980; grew up in Regensburg; lives in Munich; Diplom in civil
   engineering from TU Munich (2005); senior civil engineer at Brandt & Huber (bridge
-  inspection, since 2010); married to Katrin (chemistry teacher); children Lena (16) and
-  Felix (14); allergic to penicillin; beagle named Bruno; drives an electric car; native
+  inspection, since 2010); married to Katrin (chemistry teacher); children Lena (born 2010) and
+  Felix (born 2012); allergic to penicillin; beagle named Bruno; drives an electric car; native
   German, good English; woodworking workshop in his garage
 - Preferences: one chain — diesel estate cars (2008) → electric (April 2023, when he bought
   his EV); stable: classical music, dislikes spicy food, strong filter coffee, hearty Bavarian

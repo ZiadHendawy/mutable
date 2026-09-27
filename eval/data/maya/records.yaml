@@ -31,7 +31,7 @@ facts:
     content: Speaks English natively and conversational Mandarin, which her parents spoke at home
     confidence: 0.9
   - key: maya.fact.learning_portuguese
-    content: Is learning European Portuguese and is currently at roughly A2 level
+    content: Is learning European Portuguese; has passed A2 and is working toward B1
     confidence: 0.8
     valid_from: 2025-01-15
 
@@ -432,7 +432,8 @@ episodes:
     event_time_end: 2025-06-15
   - key: maya.ep.morocco_trip
     content: >-
-      Took a slow-travel trip through Morocco -- Marrakech, the Atlas Mountains, Essaouira
+      Took a two-week solo trip through Morocco at an unusually slow pace -- only Marrakech,
+      the Atlas Mountains, and Essaouira -- and came home wanting to travel that way from now on
     confidence: 0.95
     event_time: 2025-10-04
     event_time_end: 2025-10-18
