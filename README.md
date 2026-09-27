@@ -469,52 +469,92 @@ The harness report is also written to the run's summary page, readable from the 
 
 ## Roadmap
 
-Each milestone ships something runnable and checkable on its own — none depends on a later one to be demoable.
+Each milestone ships something runnable and checkable on its own — none depends on a later one to be demoable. **For the user** says what it means from the product side; **Ships** and **Done when** say what gets built and how it's checked.
 
-### 1. Scaffold
+### 1. Scaffold ✅
+**For the user:** nothing visible yet — the foundation that makes every later change safe to ship.
+
 **Ships:** Docker Compose running Postgres with pgvector enabled, a migration tool wired up, CI running lint and tests on every push.
+
 **Done when:** `docker compose up` gives a working local Postgres+pgvector; an empty migration and empty test suite both go green in CI.
 
-### 2. Schema + tenant-scoped ingestion
+### 2. Schema + tenant-scoped ingestion ✅
+**For the user:** their memories are stored in a structured, versioned way, and no other user can ever see them — guaranteed by the database, not by careful code.
+
 **Ships:** the three typed tables (`memory_facts`, `memory_preferences`, `memory_episodes`) with `tenant_id` and RLS policies from the first migration, plus a CRUD API per type with versioning on write.
+
 **Done when:** two tenants are seeded through the API, and a direct Postgres session for one tenant provably cannot read the other's rows.
 
-### 3. Eval dataset & harness v1
-**Ships:** synthetic seed data for two tenants — Tenant A (~100 records across facts/preferences/episodes, ~75 hand-labeled questions with gold record IDs) and Tenant B (~20–30 records, isolation probes only) — seeded through milestone 2's API; a CLI harness that runs both suites against the live API and prints a metrics table with per-question failure diffs. The gold question set gives first-class coverage to preference evolution specifically, the product's core differentiator: a "current preference" question must exclude a superseded record, and a historical question must still retrieve the old one correctly.
-**Done when:** the harness runs end-to-end and reports zero cross-tenant leaks (proving milestone 2's RLS in practice) and correct supersede handling on every preference-evolution question, even though overall Recall/MRR are near-zero, since there's no search yet, only CRUD, and retrieval metrics are expected to fail until milestone 4 makes them pass.
+### 3. Eval dataset & harness v1 ✅
+**For the user:** before building search, pin down what "remembering correctly" means — above all, that a changed preference is recalled as it is *now*, not as it used to be — and measure it on every change.
+
+**Ships:** a fictional user, Maya (100 records, 75 hand-labeled questions), and an isolation-only second user, Jonas (28 records), seeded through the API; a harness that checks isolation, supersede handling, and retrieval, printing a metrics table with per-question failure diffs. A fifth of the questions target preference evolution: a "current" question must exclude the superseded record, a historical one must still find it.
+
+**Done when:** the harness runs end-to-end and reports zero cross-tenant leaks and correct supersede handling on every preference-evolution question, with Recall/MRR near zero until milestone 4 adds search.
 
 ### 4. Search + routing
-**Ships:** the embedding write path, hybrid (vector + full-text) search per type, the rule-based query router — wired into the same harness from milestone 3.
-**Done when:** re-running that harness now shows Recall@5 ≥ 0.9 / MRR ≥ 0.8 on Tenant A, with isolation still at zero leaks.
+**For the user:** the assistant can *recall*. Before it answers or acts ("book me dinner on Friday"), it asks its memory a plain-language question ("what should I know about Maya's food?") and gets back the right records — pescatarian, shellfish allergy, dislikes cilantro — and never the outdated "vegetarian".
+
+**Ships:**
+- `/search`: a question in, ranked records out. Records, not prose — turning them into an answer is milestone 9.
+- Embeddings computed on write, and hybrid search per type: vectors for meaning, full-text for exact words, merged by rank.
+- A rule-based router that picks the record types *and the time scope*: current by default, as of a date ("back in 2023"), or full history ("used to"). Out-of-date versions are filtered out by time, not just ranked lower.
+- The harness calls `/search` instead of its stub, and CI starts failing PRs on the Recall/MRR bars.
+
+**Done when:** Recall@5 ≥ 0.9 / MRR ≥ 0.8 on Maya — including a held-out set of questions never used for tuning — with zero leaks and no superseded version returned when a question asks about now.
 
 ### 5. Caching
+**For the user:** recall feels instant, so looking something up never slows a conversation down.
+
 **Ships:** a Redis-backed embedding cache and hot-query cache, keyed per tenant.
+
 **Done when:** the eval harness shows a measured p95 latency drop with identical Recall/MRR/isolation results — proof the cache is invisible to correctness.
 
 ### 6. Deploy + CI/CD
+**For the user:** Mutable is reachable on the internet, and a change that could leak one user's memories to another cannot ship.
+
 **Ships:** the same `docker-compose.yml` from milestone 1, deployed to a single AWS EC2 instance (not ECS/RDS — cheapest option, and the closest match to local dev, at the cost of self-managed Postgres backups instead of RDS's); CI/CD running the full eval harness (isolation gate included) as a required check before deploy.
+
 **Done when:** there's a live endpoint on a public IP/DNS name, and a PR that breaks tenant scoping gets blocked by a red eval run before it can merge.
 
 ### 7. Accounts & billing
+**For the user:** they sign up and get their own key, and nobody can pose as them — today the API simply trusts whatever tenant id it's given.
+
 **Ships:** real signup/login replacing the caller-supplied opaque tenant ID, API-key issuance, basic plan gating.
+
 **Done when:** a new tenant signs up through a real auth flow and gets a scoped key that RLS enforces exactly as it does today.
 
 ### 8. Free-text ingestion
+**For the user:** they (or their assistant) just say things naturally — "I've gone pescatarian" — and Mutable turns it into the right record, recognizing when it updates something it already knew.
+
 **Ships:** an endpoint that accepts raw text and calls an LLM to extract structured facts/preferences/episodes into the existing schema.
+
 **Done when:** pasting an unstructured paragraph produces the same typed, versioned rows a structured POST would, with extraction confidence populated and reviewable before commit.
 
 ### 9. Answer synthesis (RAG)
+**For the user:** a direct answer instead of a list of records — with the memories it came from shown, so they can trust it or correct it.
+
 **Ships:** an optional endpoint that takes retrieved records and generates a prose answer via an LLM, on top of (not instead of) the existing retrieval endpoint.
+
 **Done when:** a question returns a synthesized answer that cites the specific record IDs it drew from.
 
 ### 10. Client layer
+**For the user:** the first thing a non-developer can use — tell it things, ask it things, see what it remembers, and fix what's wrong.
+
 **Ships:** a thin UI or chat interface consuming the existing API — the first real product surface on top of the engine.
+
 **Done when:** someone who isn't you can add and query memories without touching curl or Postman.
 
 ### 11. Document/vault ingestion
+**For the user:** hand over whole documents — notes, a CV, a journal — and ask about them, not just short statements.
+
 **Ships:** chunked ingestion for long-form text, likely a new memory type with its own retrieval strategy.
+
 **Done when:** a full document can be ingested and a question against it returns the right chunk, evaluated against its own gold set.
 
 ### 12. Autonomous agent behavior
+**For the user:** the assistant acts on what it knows — schedules, reminders, decisions — and can always show which memory led to which action.
+
 **Ships:** a policy layer letting an agent act on stored memory (schedule, notify, decide), not just retrieve it.
+
 **Done when:** an agent takes a real action informed by a memory lookup, with an audit trail of which memory drove which action.
