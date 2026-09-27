@@ -3,10 +3,125 @@
 persona: Maya Chen
 
 facts:
+  # Identity & location
+  - key: maya.fact.birthday
+    content: Was born on March 14, 1995
+    confidence: 0.95
+  - key: maya.fact.hometown
+    content: Grew up in Toronto, Canada
+    confidence: 0.95
+  - key: maya.fact.citizenship
+    content: Is a Canadian citizen
+    confidence: 0.95
   - key: maya.fact.lives_in_lisbon
     content: Lives in Lisbon, Portugal
     confidence: 0.95
     valid_from: 2024-09-15
+  - key: maya.fact.apartment
+    content: >-
+      Rents a two-bedroom apartment in Lisbon's Arroios neighborhood, with the second bedroom
+      set up as a home office
+    confidence: 0.9
+    valid_from: 2024-09-15
+  - key: maya.fact.residence_permit
+    content: Holds a Portuguese residence permit for highly qualified workers, first issued in 2024
+    confidence: 0.9
+    valid_from: 2024-09-01
+  - key: maya.fact.languages
+    content: Speaks English natively and conversational Mandarin, which her parents spoke at home
+    confidence: 0.9
+  - key: maya.fact.learning_portuguese
+    content: Is learning European Portuguese and is currently at roughly A2 level
+    confidence: 0.8
+    valid_from: 2025-01-15
+
+  # Education & career
+  - key: maya.fact.education
+    content: >-
+      Has a Bachelor of Information from the University of Toronto (2017), specializing in
+      human-computer interaction
+    confidence: 0.95
+  - key: maya.fact.maple_health
+    content: >-
+      First design job was junior UX designer at Maple Health, a Toronto health-tech company,
+      from 2017 to 2019
+    confidence: 0.9
+  - key: maya.fact.studio_loop
+    content: Worked as a product designer at Studio Loop, a Toronto design agency, from 2019 to 2024
+    confidence: 0.95
+  - key: maya.fact.job_title
+    content: Works as a Senior Product Designer at Nordic Pay
+    confidence: 0.95
+    valid_from: 2024-10-01
+  - key: maya.fact.nordic_pay
+    content: >-
+      Nordic Pay is a fintech startup that builds payment and invoicing tools for small
+      businesses, headquartered in Stockholm with an engineering hub in Lisbon
+    confidence: 0.9
+  - key: maya.fact.current_project
+    content: Leads design for Nordic Pay's merchant onboarding flow
+    confidence: 0.85
+    valid_from: 2025-01-06
+  - key: maya.fact.manager
+    content: Reports to Ingrid Larsen, Nordic Pay's Head of Design, who is based in Stockholm
+    confidence: 0.9
+    valid_from: 2024-10-01
+  - key: maya.fact.mentoring
+    content: Mentors two junior product designers at Nordic Pay
+    confidence: 0.85
+    valid_from: 2025-09-01
+  - key: maya.fact.skills
+    content: >-
+      Core skills are Figma, interactive prototyping, and user research -- especially usability
+      testing and customer interviews
+    confidence: 0.9
+
+  # People
+  - key: maya.fact.partner
+    content: >-
+      Long-term partner is Sam; the two have been together since 2020 and moved to Lisbon
+      together
+    confidence: 0.95
+  - key: maya.fact.partner_job
+    content: Sam, her partner, works as a freelance photographer
+    confidence: 0.9
+  - key: maya.fact.brother
+    content: Has a younger brother, Theo, who lives in Vancouver and works as an ER nurse
+    confidence: 0.95
+  - key: maya.fact.parents
+    content: Her parents, Linda and David Chen, live in Toronto
+    confidence: 0.95
+  - key: maya.fact.best_friend
+    content: Her closest friend is Priya Nair, who lives in Barcelona
+    confidence: 0.9
+
+  # Health
+  - key: maya.fact.shellfish_allergy
+    content: Is allergic to shellfish and carries an epinephrine auto-injector
+    confidence: 0.98
+  - key: maya.fact.pollen_allergy
+    content: Has a mild seasonal pollen allergy that is worst in spring
+    confidence: 0.85
+
+  # Everyday life
+  - key: maya.fact.cat
+    content: Has a cat named Biscuit, an orange tabby
+    confidence: 0.95
+    valid_from: 2025-02-08
+  - key: maya.fact.ebike
+    content: Gets around Lisbon mainly on an e-bike
+    confidence: 0.85
+    valid_from: 2024-10-01
+  - key: maya.fact.no_car
+    content: Doesn't own a car; has a Canadian driver's license but rarely drives
+    confidence: 0.85
+  - key: maya.fact.guitar
+    content: Plays acoustic guitar, self-taught since early 2023
+    confidence: 0.9
+  - key: maya.fact.volunteering
+    content: Volunteers once a month running portfolio reviews for students at a Lisbon coding bootcamp
+    confidence: 0.8
+    valid_from: 2025-10-01
 
 preferences:
   - key: maya.pref.diet.v1
