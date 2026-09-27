@@ -54,3 +54,10 @@ def get_tenant_db(
     except Exception:
         db.rollback()
         raise
+
+
+# Use this, not Depends(get_tenant_db), in endpoints. scope="function" commits (or rolls
+# back) *before* the response is sent. The default "request" scope runs the cleanup
+# after it, so a commit that failed -- e.g. a foreign key only checked at flush time --
+# had already been reported to the caller as a success.
+TENANT_DB = Depends(get_tenant_db, scope="function")
