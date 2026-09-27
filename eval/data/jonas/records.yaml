@@ -1,0 +1,7 @@
+# Jonas Weber -- isolation-only persona, no gold questions (see eval/personas.md).
+persona: Jonas Weber
+
+facts:
+  - key: jonas.fact.lives_in_munich
+    content: Lives in Munich, Germany
+    confidence: 0.95

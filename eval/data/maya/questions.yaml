@@ -1,0 +1,15 @@
+# Gold questions for Maya. `gold` lists the record keys a correct top-5 must contain;
+# `must_exclude` lists keys that must not appear at all. Format: eval/fixtures.py.
+
+- id: q001
+  question: What's Maya's diet these days?
+  category: preference_current
+  gold: [maya.pref.diet.v2]
+  must_exclude: [maya.pref.diet.v1]
+
+- id: q002
+  question: Was Maya vegetarian back in 2023?
+  category: preference_historical
+  gold: [maya.pref.diet.v1]
+  must_exclude: [maya.pref.diet.v2]
+  as_of: 2023-06-01

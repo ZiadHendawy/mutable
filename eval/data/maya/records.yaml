@@ -1,0 +1,29 @@
+# Maya Chen -- the rich persona (see eval/personas.md). Format: eval/fixtures.py.
+# Seeded top to bottom: a preference's `supersedes` must name an earlier key.
+persona: Maya Chen
+
+facts:
+  - key: maya.fact.lives_in_lisbon
+    content: Lives in Lisbon, Portugal
+    confidence: 0.95
+    valid_from: 2024-09-15
+
+preferences:
+  - key: maya.pref.diet.v1
+    content: Is vegetarian
+    confidence: 0.9
+    strength: 0.9
+    valid_from: 2016-01-01
+  - key: maya.pref.diet.v2
+    content: Is pescatarian -- eats fish, but no other meat
+    confidence: 0.9
+    strength: 0.8
+    valid_from: 2025-05-01
+    supersedes: maya.pref.diet.v1
+
+episodes:
+  - key: maya.ep.morocco_trip
+    content: Took a slow-travel trip through Morocco -- Marrakech, the Atlas Mountains, Essaouira
+    confidence: 0.95
+    event_time: 2025-10-04
+    event_time_end: 2025-10-18
