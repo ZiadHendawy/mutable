@@ -1,7 +1,9 @@
 name: CI
 
 on:
+  # Branch pushes are covered by their PR; running on both doubled every check.
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -45,3 +47,27 @@ jobs:
 
       - name: Test
         run: pytest
+
+      - name: Start API
+        run: |
+          nohup uvicorn app.main:app --port 8000 > uvicorn.log 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -sf localhost:8000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "API did not come up"; cat uvicorn.log; exit 1
+
+      # Fails the run on any cross-tenant leak or supersede failure. Recall/MRR are
+      # reported but don't gate until search lands (milestone 4 adds --require-retrieval).
+      - name: Eval
+        run: |
+          set +e
+          python -m eval.harness --base-url http://localhost:8000 > eval-report.txt
+          status=$?
+          cat eval-report.txt
+          { echo '```'; cat eval-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: API log
+        if: failure()
+        run: cat uvicorn.log || true
