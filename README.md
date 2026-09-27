@@ -10,7 +10,7 @@ Multi-tenant and isolated from day one, via Postgres Row-Level Security enforced
 
 **The direction:** this is the memory layer for a full AI personal assistant — one that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a record of who someone is that's actually kept up to date, not guesswork. It's a useful, standalone API on its own either way.
 
-**Status:** milestone 2 (schema + tenant-scoped ingestion) done — all three memory types have full CRUD, enforced by Postgres RLS, with a dedicated cross-tenant isolation test proving it. Search and eval harness land in milestones 3–4. See the [Roadmap](#roadmap).
+**Status:** milestone 3 (eval dataset + harness) done — a 100-record persona with 75 gold questions, plus an isolation-only second tenant, seeded through the API and scored by a harness that runs on every PR. It reports zero cross-tenant leaks and correct supersede handling on all 20 preference-evolution questions; Recall/MRR read 0.00 until search lands in milestone 4. See the [Roadmap](#roadmap).
 
 ## Getting started
 
@@ -26,6 +26,8 @@ docker compose up
 - `curl -X POST localhost:8000/facts -H "X-Tenant-Id: <any-uuid>" -H "Content-Type: application/json" -d '{"content": "...", "confidence": 0.9}'` — every resource endpoint requires this header; a tenant is created implicitly the first time its id is used, no signup step
 
 Tests: `docker compose run --rm api pytest`. Lint: `docker compose run --rm api ruff check .`
+
+Eval (with the API running): `docker compose run --rm api python -m eval.harness --base-url http://api:8000` — seeds both personas as fresh tenants and prints the metrics table. Add `--require-retrieval` to also fail on the Recall/MRR bars. The dataset lives in `eval/data/`, its design in [`eval/personas.md`](eval/personas.md).
 
 ## Memory types
 
@@ -49,7 +51,7 @@ No Documents type — long-form text needs chunking, a different retrieval probl
 
 ## Eval contract
 
-Two synthetic tenants, no real user data in the repo. Tenant A carries the full seed set (~100 records, ~75 labeled questions) for retrieval quality. Tenant B is a minimal second tenant that exists only to probe isolation.
+Two synthetic tenants, no real user data in the repo. Tenant A carries the full seed set (100 records, 75 labeled questions) for retrieval quality. Tenant B is a minimal second tenant that exists only to probe isolation.
 
 | Metric | Bar |
 |---|---|
@@ -58,7 +60,7 @@ Two synthetic tenants, no real user data in the repo. Tenant A carries the full 
 | Routing accuracy | scored independently of retrieval quality |
 | p95 latency | tracked from the caching milestone on |
 
-The harness runs both suites against a live API and prints a metrics table with per-question failure diffs. It gates every PR — not an afterthought.
+The harness runs both suites against a live API and prints a metrics table with per-question failure diffs. It runs on every PR and fails it on any leak or supersede error — not an afterthought. Recall/MRR join the gate once search exists (milestone 4).
 
 ## Roadmap
 
