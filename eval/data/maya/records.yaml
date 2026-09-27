@@ -180,7 +180,7 @@ preferences:
     content: Mildly prefers small startups over large companies
     confidence: 0.8
     strength: 0.4
-    valid_from: 2024-06-01
+    valid_from: 2024-06-14
     supersedes: maya.pref.employer_type.v1
   - key: maya.pref.design_tool.v1
     content: Prefers Sketch for UI design work
@@ -191,7 +191,7 @@ preferences:
     content: Prefers Figma for UI design, mainly for real-time collaboration
     confidence: 0.9
     strength: 0.8
-    valid_from: 2020-03-15
+    valid_from: 2020-03-16
     supersedes: maya.pref.design_tool.v1
   - key: maya.pref.caffeine.v1
     content: Prefers strong black coffee, several cups a day
@@ -219,7 +219,7 @@ preferences:
     content: Prefers reading on an e-reader
     confidence: 0.85
     strength: 0.6
-    valid_from: 2024-08-15
+    valid_from: 2024-08-20
     supersedes: maya.pref.reading.v1
 
   # Stable -- current, never superseded
@@ -316,8 +316,168 @@ preferences:
     strength: -0.6
 
 episodes:
+  # Education & early career
+  - key: maya.ep.uoft_start
+    content: Started her undergraduate studies at the University of Toronto
+    confidence: 0.9
+    event_time: 2013-09-03
+  - key: maya.ep.graduation
+    content: Graduated from the University of Toronto with a Bachelor of Information
+    confidence: 0.95
+    event_time: 2017-06-12
+  - key: maya.ep.maple_health_start
+    content: Started her first design job, as a junior UX designer at Maple Health in Toronto
+    confidence: 0.9
+    event_time: 2017-08-08
+  - key: maya.ep.studio_loop_start
+    content: Joined Studio Loop in Toronto as a product designer
+    confidence: 0.95
+    event_time: 2019-05-06
+
+  # 2020-2023
+  - key: maya.ep.met_sam
+    content: Started dating Sam after meeting at a friend's photography exhibition in Toronto
+    confidence: 0.9
+    event_time: 2020-02-15
+  - key: maya.ep.figma_switch
+    content: Studio Loop went fully remote and moved its design team from Sketch to Figma
+    confidence: 0.85
+    event_time: 2020-03-16
+  - key: maya.ep.running_start
+    content: Started running regularly, three times a week along the Toronto waterfront
+    confidence: 0.85
+    event_time: 2021-03-01
+  - key: maya.ep.ux_course
+    content: Completed a ten-week online course in UX research methods
+    confidence: 0.9
+    event_time: 2021-10-04
+    event_time_end: 2021-12-10
+  - key: maya.ep.portugal_trip
+    content: >-
+      Took a ten-day trip to Portugal with Sam, packing in Lisbon, Porto, Sintra, and Lagos
+    confidence: 0.9
+    event_time: 2022-11-05
+    event_time_end: 2022-11-15
+  - key: maya.ep.guitar_start
+    content: Bought an acoustic guitar and started teaching herself to play
+    confidence: 0.85
+    event_time: 2023-02-01
+  - key: maya.ep.japan_trip
+    content: >-
+      Travelled around Japan with Sam for twelve days, covering Tokyo, Hakone, Kyoto, Osaka,
+      and Hiroshima
+    confidence: 0.9
+    event_time: 2023-08-10
+    event_time_end: 2023-08-22
+
+  # The move to Lisbon
+  - key: maya.ep.nordic_offer
+    content: Accepted a job offer from Nordic Pay, on the condition of relocating to Lisbon
+    confidence: 0.95
+    event_time: 2024-06-14
+  - key: maya.ep.book_donation
+    content: >-
+      Donated most of her physical book collection to a Toronto library ahead of the move
+    confidence: 0.85
+    event_time: 2024-08-20
+  - key: maya.ep.studio_loop_last_day
+    content: Last day at Studio Loop; the team threw her a small farewell dinner
+    confidence: 0.9
+    event_time: 2024-08-30
+  - key: maya.ep.move_to_lisbon
+    content: Moved from Toronto to Lisbon with Sam
+    confidence: 0.95
+    event_time: 2024-09-15
+  - key: maya.ep.nordic_pay_start
+    content: Started as a Senior Product Designer at Nordic Pay in Lisbon
+    confidence: 0.95
+    event_time: 2024-10-01
+
+  # 2025
+  - key: maya.ep.went_remote
+    content: >-
+      Switched to working fully remote from her home office, with her manager's approval
+    confidence: 0.9
+    event_time: 2025-01-06
+  - key: maya.ep.portuguese_lessons
+    content: Started weekly European Portuguese lessons
+    confidence: 0.9
+    event_time: 2025-01-15
+  - key: maya.ep.adopted_biscuit
+    content: Adopted Biscuit, an orange tabby cat, from a Lisbon animal shelter
+    confidence: 0.95
+    event_time: 2025-02-08
+  - key: maya.ep.berlin_talk
+    content: >-
+      Gave a talk on running user research for merchant onboarding at a product design
+      conference in Berlin
+    confidence: 0.9
+    event_time: 2025-03-20
+    event_time_end: 2025-03-21
+  - key: maya.ep.half_marathon
+    content: Ran a half-marathon in Lisbon, finishing in 2 hours 4 minutes
+    confidence: 0.95
+    event_time: 2025-04-06
+  - key: maya.ep.knee_strain
+    content: >-
+      Strained her left knee while training, did six weeks of physiotherapy, and stopped
+      running
+    confidence: 0.9
+    event_time: 2025-05-10
+    event_time_end: 2025-06-20
+  - key: maya.ep.priya_wedding
+    content: Attended her friend Priya's wedding in Barcelona
+    confidence: 0.95
+    event_time: 2025-06-13
+    event_time_end: 2025-06-15
   - key: maya.ep.morocco_trip
-    content: Took a slow-travel trip through Morocco -- Marrakech, the Atlas Mountains, Essaouira
+    content: >-
+      Took a slow-travel trip through Morocco -- Marrakech, the Atlas Mountains, Essaouira
     confidence: 0.95
     event_time: 2025-10-04
     event_time_end: 2025-10-18
+  - key: maya.ep.toronto_holidays
+    content: Visited her parents in Toronto for the holidays
+    confidence: 0.9
+    event_time: 2025-12-20
+    event_time_end: 2026-01-03
+
+  # 2026
+  - key: maya.ep.theo_visit
+    content: Her brother Theo visited her in Lisbon for a week
+    confidence: 0.9
+    event_time: 2026-02-12
+    event_time_end: 2026-02-19
+  - key: maya.ep.birthday_31
+    content: >-
+      Celebrated her 31st birthday with a small dinner at home with Sam and a few friends
+    confidence: 0.9
+    event_time: 2026-03-14
+  - key: maya.ep.onboarding_launch
+    content: Nordic Pay launched the redesigned merchant onboarding flow she led
+    confidence: 0.9
+    event_time: 2026-04-21
+  - key: maya.ep.azores_trip
+    content: >-
+      Spent ten days on Sao Miguel in the Azores with Sam, staying at one guesthouse the whole
+      trip
+    confidence: 0.9
+    event_time: 2026-05-16
+    event_time_end: 2026-05-26
+  - key: maya.ep.portuguese_exam
+    content: Passed the CIPLE A2 exam in European Portuguese
+    confidence: 0.9
+    event_time: 2026-06-18
+  - key: maya.ep.toronto_dad_birthday
+    content: Flew to Toronto for her father David's 65th birthday
+    confidence: 0.9
+    event_time: 2026-07-09
+    event_time_end: 2026-07-16
+  - key: maya.ep.biscuit_vet
+    content: Took Biscuit to the vet for a dental cleaning
+    confidence: 0.85
+    event_time: 2026-08-04
+  - key: maya.ep.lisbon_meetup_talk
+    content: Spoke about accessible payment forms at a Lisbon product design meetup
+    confidence: 0.9
+    event_time: 2026-09-10

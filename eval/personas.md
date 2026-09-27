@@ -79,14 +79,27 @@ Stable (current, no supersede):
 - Fitness: works out in the morning, before work; dislikes group fitness classes
 
 ### Episodes
-- Moved Toronto → Lisbon, September 2024
-- Started at Nordic Pay, October 2024
-- Gave a talk at a design conference in Berlin, March 2025
-- Adopted a cat, Biscuit, February 2025
-- Friend's wedding in Barcelona, June 2025
-- Completed a half-marathon in Lisbon, April 2025
-- Trip to Morocco, October 2025 (multi-day — exercises `event_time_end`)
-- Visited family in Toronto for the holidays, December 2025
+A dated timeline, 2013 → September 2026 (the eval's "now"). Built to exercise three things:
+the in-story cause of every preference change (knee strain → strength training, book donation
+→ e-reader, Nordic Pay offer → startups); repeated topics where "most recent" matters (two
+Toronto visits, two talks, two trips with Sam); and multi-day events via `event_time_end`.
+
+- Education & early career: starts at University of Toronto (Sept 2013); graduates (June
+  2017); joins Maple Health (Aug 2017); joins Studio Loop (May 2019)
+- 2020–2023: starts dating Sam (Feb 2020); Studio Loop goes remote and switches Sketch → Figma
+  (Mar 2020); starts running (Mar 2021); ten-week UX research course (Oct–Dec 2021); packed
+  ten-day Portugal trip with Sam — Lisbon, Porto, Sintra, Lagos (Nov 2022); starts guitar
+  (Feb 2023); packed twelve-day Japan trip (Aug 2023)
+- The move: accepts Nordic Pay's offer (June 2024); donates her books (Aug 2024); last day at
+  Studio Loop (Aug 2024); moves to Lisbon with Sam (Sept 2024); starts at Nordic Pay (Oct 2024)
+- 2025: goes fully remote and starts Portuguese lessons (Jan); adopts Biscuit (Feb); talk at a
+  design conference in Berlin (Mar); Lisbon half-marathon (Apr); knee strain + six weeks of
+  physio, stops running (May–June); Priya's wedding in Barcelona (June); Morocco trip (Oct);
+  holidays with her parents in Toronto (Dec 2025 – Jan 2026)
+- 2026: Theo visits Lisbon (Feb); 31st birthday dinner at home (Mar); the onboarding redesign
+  she led launches (Apr); slow ten days in the Azores (May); passes the CIPLE A2 Portuguese
+  exam (June); Toronto for her dad's 65th (July); Biscuit's dental cleaning (Aug); talk at a
+  Lisbon design meetup (Sept)
 
 ## Tenant B — Jonas Weber
 
