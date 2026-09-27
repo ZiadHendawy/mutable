@@ -1,6 +1,6 @@
 # Eval personas (milestone 3, task 1)
 
-Reference for authoring the actual fixture data in later tasks. Both personas are entirely
+Reference for authoring the actual seed data in later tasks. Both personas are entirely
 fictional — no real personal data, per the README's eval contract.
 
 ## Tenant A — Maya Chen

@@ -1,4 +1,4 @@
-# Maya Chen -- the rich persona (see eval/personas.md). Format: eval/fixtures.py.
+# Maya Chen -- the rich persona (see eval/personas.md). Format: eval/dataset.py.
 # Seeded top to bottom: a preference's `supersedes` must name an earlier key.
 persona: Maya Chen
 

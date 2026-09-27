@@ -1,4 +1,4 @@
-"""Eval fixture format: typed records and gold questions, keyed by stable names.
+"""Eval seed data format: typed records and gold questions, keyed by stable names.
 
 Layout -- one directory per persona under eval/data/:
 
@@ -36,7 +36,7 @@ def _date_to_datetime(value: object) -> object:
 
 def _assume_utc(value: datetime) -> datetime:
     # Naive values (bare dates, or strings without an offset) are UTC, so every
-    # fixture timestamp compares cleanly against every other.
+    # seed-data timestamp compares cleanly against every other.
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
@@ -57,25 +57,25 @@ class _Record(_Strict):
     valid_from: UtcDatetime | None = None
 
 
-class FactFixture(_Record):
+class SeedFact(_Record):
     pass
 
 
-class PreferenceFixture(_Record):
+class SeedPreference(_Record):
     strength: float = Field(ge=-1, le=1)
     supersedes: Key | None = None
 
 
-class EpisodeFixture(_Record):
+class SeedEpisode(_Record):
     event_time: UtcDatetime
     event_time_end: UtcDatetime | None = None
 
 
 class PersonaRecords(_Strict):
     persona: str
-    facts: list[FactFixture] = []
-    preferences: list[PreferenceFixture] = []
-    episodes: list[EpisodeFixture] = []
+    facts: list[SeedFact] = []
+    preferences: list[SeedPreference] = []
+    episodes: list[SeedEpisode] = []
 
     def all_records(self) -> list[_Record]:
         return [*self.facts, *self.preferences, *self.episodes]
@@ -105,7 +105,7 @@ class PersonaRecords(_Strict):
         # top to bottom, so the old record has to exist first), each record is
         # replaced at most once, and both ends carry explicit dates so the
         # validity windows are real history, not seed-run timestamps.
-        earlier: dict[str, PreferenceFixture] = {}
+        earlier: dict[str, SeedPreference] = {}
         for pref in self.preferences:
             if pref.supersedes is not None:
                 old = earlier.get(pref.supersedes)

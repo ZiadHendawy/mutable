@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from eval.fixtures import Persona, load_persona
+from eval.dataset import Persona, load_persona
 
 BASE = {
     "records": {
@@ -63,7 +63,7 @@ def _persona(mutate=None) -> Persona:
 
 
 @pytest.mark.parametrize("name", ["maya", "jonas"])
-def test_shipped_fixtures_validate(name: str) -> None:
+def test_shipped_seed_data_validates(name: str) -> None:
     persona = load_persona(name)
     assert persona.records.all_records()
 
@@ -121,7 +121,7 @@ def _set(path, value):
         _set(["questions", 1, "id"], "q001"),
     ],
 )
-def test_invalid_fixtures_rejected(mutate) -> None:
+def test_invalid_seed_data_rejected(mutate) -> None:
     with pytest.raises(ValidationError):
         _persona(mutate)
 

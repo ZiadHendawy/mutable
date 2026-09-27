@@ -1,5 +1,5 @@
 # Gold questions for Maya. `gold` lists the record keys a correct top-5 must contain;
-# `must_exclude` lists keys that must not appear at all. Format: eval/fixtures.py.
+# `must_exclude` lists keys that must not appear at all. Format: eval/dataset.py.
 
 - id: q001
   question: What's Maya's diet these days?
