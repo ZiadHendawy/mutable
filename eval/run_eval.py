@@ -12,7 +12,7 @@ One module per step, in the order they run:
     report.py           totals, pass/fail, and the printed table
 
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
-metrics are reported against the README's bars but only gate the run with
+metrics are reported against the bars in docs/eval.md but only gate the run with
 --require-retrieval, since there is no search endpoint until milestone 4.
 
 Held-out questions are scored exactly like the main set but reported only as totals, never
@@ -60,7 +60,7 @@ def main() -> None:
     parser.add_argument(
         "--require-retrieval",
         action="store_true",
-        help="also fail the run when Recall/MRR are below the README's bars, on the main set "
+        help="also fail the run when Recall/MRR are below the bars (docs/eval.md), on the main set "
         "or the held-out set",
     )
     args = parser.parse_args()
