@@ -45,15 +45,15 @@ jobs:
         run: ruff check .
 
       # The embedding model is downloaded once and then restored from the cache on later
-      # runs. The key names the model: change it when app/embeddings.py's MODEL_NAME changes.
+      # runs. The key changes whenever app/embeddings.py does, which is where the model is named.
       - name: Restore the embedding model
         uses: actions/cache@v4
         with:
           path: ${{ env.FASTEMBED_CACHE_PATH }}
-          key: fastembed-BAAI-bge-small-en-v1.5
+          key: fastembed-${{ hashFiles('app/embeddings.py') }}
 
-      # Loads the model, downloading it only if the cache didn't have it, so the tests
-      # never wait on (or fail over) a download.
+      # Loads the model, downloading it only if the cache didn't have it. The test and API
+      # steps set HF_HUB_OFFLINE, so there a missing model fails loudly instead of downloading.
       - name: Download the embedding model
         run: python -c "from app.embeddings import LocalEmbedder; LocalEmbedder()"
 
@@ -62,8 +62,12 @@ jobs:
 
       - name: Test
         run: pytest
+        env:
+          HF_HUB_OFFLINE: "1"
 
       - name: Start API
+        env:
+          HF_HUB_OFFLINE: "1"
         run: |
           nohup uvicorn app.main:app --port 8000 > uvicorn.log 2>&1 &
           for _ in $(seq 1 30); do

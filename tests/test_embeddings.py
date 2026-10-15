@@ -15,6 +15,10 @@ GREEN_TEA = "likes green tea"
 LISBON = "lives in Lisbon"
 
 
+def length(vector: list[float]) -> float:
+    return math.sqrt(sum(number * number for number in vector))
+
+
 def test_fake_embedder_gives_the_same_vector_every_time() -> None:
     first = FakeEmbedder().embed([TEA])
     second = FakeEmbedder().embed([TEA])
@@ -30,7 +34,7 @@ def test_fake_embedder_gives_384_numbers_scaled_to_length_1() -> None:
     assert FakeEmbedder().dimension == 384
     assert [len(vector) for vector in vectors] == [384, 384]
     for vector in vectors:
-        assert math.isclose(math.hypot(*vector), 1.0)
+        assert math.isclose(length(vector), 1.0)
 
 
 def test_fake_embedder_puts_texts_that_share_words_closer() -> None:
@@ -51,12 +55,15 @@ def local_embedder() -> LocalEmbedder:
     return embedder
 
 
-def test_local_embedder_gives_one_384_number_vector_per_text(
+def test_local_embedder_gives_384_numbers_scaled_to_length_1(
     local_embedder: LocalEmbedder,
 ) -> None:
     vectors = local_embedder.embed([TEA, LISBON])
     assert local_embedder.dimension == 384
     assert [len(vector) for vector in vectors] == [384, 384]
+    for vector in vectors:
+        # The model computes in 32-bit numbers, so allow for rounding in the last digits.
+        assert math.isclose(length(vector), 1.0, rel_tol=1e-6)
 
 
 def test_local_embedder_returns_vectors_in_the_order_of_the_texts(

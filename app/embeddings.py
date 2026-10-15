@@ -43,7 +43,8 @@ class LocalEmbedder:
     def __init__(self) -> None:
         # Loading the model takes a moment, so the app creates one and shares it
         # (get_embedder). fastembed downloads it on first use into the folder named by
-        # FASTEMBED_CACHE_PATH; the Docker image and CI download it in advance.
+        # FASTEMBED_CACHE_PATH. The Docker image and CI download it in advance, then set
+        # HF_HUB_OFFLINE so that a missing model fails here instead of downloading.
         self._model = TextEmbedding(MODEL_NAME)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -71,7 +72,7 @@ class FakeEmbedder:
             # string changes from run to run, which would make test results change too.
             vector[zlib.crc32(word.encode()) % self.dimension] += 1.0
         # Scale to length 1, like the real model's vectors.
-        length = math.hypot(*vector)
+        length = math.sqrt(sum(number * number for number in vector))
         if length == 0:  # a text with no words
             return vector
         return [number / length for number in vector]

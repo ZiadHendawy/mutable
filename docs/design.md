@@ -571,7 +571,7 @@ The platform:
 
 - **Python:** 3.12 (`python:3.12-slim` image)
 - **Database:** PostgreSQL 16 (`pgvector/pgvector:pg16` image), with the pgvector extension, 0.8 when tested
-- **Embedding model:** `BAAI/bge-small-en-v1.5`, 384 numbers per vector, run by fastembed
+- **Embedding model:** `BAAI/bge-small-en-v1.5`, 384 numbers per vector, run by fastembed from its ONNX copy, `Qdrant/bge-small-en-v1.5-onnx-Q`
 - **Containers:** Docker Compose
 - **CI:** GitHub Actions
 
@@ -593,7 +593,7 @@ flowchart LR
     env --> models
 ```
 
-`embeddings.py` isn't in the picture yet: it imports none of these, and none of them import it until step 3.
+`embeddings.py` isn't in the picture yet: it imports none of these, and none of them import it until [milestone 4's step 3](#21-now-milestone-4-search).
 
 **The eval, from the entry point down to the data files:**
 
@@ -844,14 +844,16 @@ flowchart TB
     iface["Embedder: the interface<br/>dimension · embed(texts) → one vector per text"]
     local["LocalEmbedder<br/>the real model, BAAI/bge-small-en-v1.5<br/>understands meaning"]
     fake["FakeEmbedder<br/>one position per word<br/>instant and predictable"]
-    app["the app<br/>Depends(get_embedder)"]
-    tests["tests"]
+    app["the app's endpoints<br/>Depends(get_embedder)"]
+    tests["the API tests<br/>tests/conftest.py"]
 
-    local -. implements .-> iface
-    fake -. implements .-> iface
-    app -- "one shared instance" --> local
-    tests -- "swapped in through<br/>app.dependency_overrides" --> fake
+    local -- implements --> iface
+    fake -- implements --> iface
+    app -. "one shared instance<br/>(from milestone 4, step 3)" .-> local
+    tests -. "swapped in through app.dependency_overrides<br/>(from milestone 4, step 3)" .-> fake
 ```
+
+The dashed lines don't exist yet: they arrive in [milestone 4's step 3](#21-now-milestone-4-search).
 
 | Name | What it is |
 |---|---|
@@ -861,9 +863,13 @@ flowchart TB
 | `FakeEmbedder` | For tests. Each word adds 1 to one of the 384 numbers, picked by a checksum of the word (`zlib.crc32`), and the vector is then scaled to length 1. So the same text gets the same vector in every run, and texts that share words get closer vectors. It knows nothing about meaning |
 | `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a moment, so it's never done per request |
 
-No endpoint uses the embedder yet. Step 3 embeds each record as it's written, and from then on the tests swap in `FakeEmbedder`, so they stay fast and predictable.
+No endpoint uses the embedder yet. [Milestone 4's step 3](#21-now-milestone-4-search) embeds each record as it's written, and from then on the API tests swap in `FakeEmbedder`, so they stay fast and predictable.
 
-**Where the model comes from.** fastembed downloads the model (about 65 MB) from Hugging Face the first time it's loaded, into the folder named by the `FASTEMBED_CACHE_PATH` environment variable (fastembed's own setting), and after that reads it from disk with no network. The Docker image downloads it at build time, and CI keeps it in a cache between runs ([5.8](#58-running-it-containers-configuration-and-ci)). Anywhere else, the first use downloads it to a temporary folder.
+**Where the model comes from.** fastembed uses an ONNX copy of the model, `Qdrant/bge-small-en-v1.5-onnx-Q` on Hugging Face (about 65 MB). It downloads it the first time the model is loaded, into the folder named by the `FASTEMBED_CACHE_PATH` environment variable (fastembed's own setting), where it appears as `models--Qdrant--bge-small-en-v1.5-onnx-Q`. After that it reads it from disk, with no network.
+
+- **Docker:** the image downloads it at build time, then sets `HF_HUB_OFFLINE=1`, so a missing model fails loudly instead of quietly downloading.
+- **CI:** keeps it in a cache between runs, with the same guard on the test and API steps ([5.8](#58-running-it-containers-configuration-and-ci)).
+- **Anywhere else:** the first use downloads it to a temporary folder.
 
 ### 5.5 The database (`migrations/`)
 
@@ -1131,7 +1137,7 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
-| `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
+| `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
 | `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
 | `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check |
@@ -1153,7 +1159,7 @@ flowchart LR
 
 | File | What it sets |
 |---|---|
-| `Dockerfile` | `python:3.12-slim`; installs `requirements-dev.txt`; downloads the embedding model into `/opt/fastembed` and points `FASTEMBED_CACHE_PATH` there (outside `/app`, because compose mounts the repo over `/app` and would hide it); runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
+| `Dockerfile` | `python:3.12-slim`; installs `requirements-dev.txt`; copies in just `app/embeddings.py` and loads `LocalEmbedder()` once, which downloads the embedding model into `/opt/fastembed` (`FASTEMBED_CACHE_PATH`, outside `/app`, because compose mounts the repo over `/app` and would hide it); then sets `HF_HUB_OFFLINE=1`, so the model is never downloaded again; runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
 | `docker-compose.yml` | **db:** user, password and database `mutable`; port 5432; a health check every 5 seconds; data kept in the `pgdata` volume. **api:** both database URLs pointing at host `db`; port 8000; starts only once the db is healthy; mounts the repo at `/app` for live reload |
 | `.env.example` | The same two URLs pointing at `localhost`, for running outside Docker. Copy it to `.env` |
 | `pyproject.toml` | **Ruff:** 100-character lines, Python 3.12, rule sets E, F, I and UP. **pytest:** the `tests/` folder, with the project root on the import path |
@@ -1177,4 +1183,4 @@ flowchart LR
     gate -- no --> fail["check fails;<br/>print the API log"]
 ```
 
-CI installs everything on the runner directly, not in Docker, so it keeps the embedding model in its own cache (`actions/cache`): the folder `FASTEMBED_CACHE_PATH` names, under a key that names the model. Loading the model before the tests means they never wait on a download; it downloads only when the cache is empty, such as after the key changes.
+CI doesn't use Docker, so it saves the model folder (`FASTEMBED_CACHE_PATH`) with `actions/cache`, under a key based on `app/embeddings.py`. A step before the tests loads the model: on a cache hit it's read from disk; on a miss it's downloaded once and saved for later runs. The test and API steps set `HF_HUB_OFFLINE=1`, so they can't download it themselves.
