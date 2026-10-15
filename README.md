@@ -96,9 +96,9 @@ flowchart LR
     curl -- "HTTP + X-Tenant-Id" --> uvicorn
     evals -- "HTTP + X-Tenant-Id" --> uvicorn
     tests -- "direct ASGI call" --> fastapi
-    orm -- "role memory_engine_app" --> rls
+    orm -- "role mutable_app" --> rls
     rls --> tables
-    alembic -- "role memory_engine (superuser)" --> tables
+    alembic -- "role mutable (superuser)" --> tables
 ```
 
 Two paths reach the database, deliberately with different rights: **the API** connects as a restricted role that RLS always applies to; **Alembic** connects as the owner/superuser because it needs to create tables, roles, and policies — and never serves a request.
@@ -162,8 +162,8 @@ Three details make tenant scoping hold:
 
 ```mermaid
 flowchart TB
-    admin["memory_engine<br/>superuser, owns the tables<br/>used by Alembic only"]
-    app["memory_engine_app<br/>not an owner, not a superuser<br/>used by the running API"]
+    admin["mutable<br/>superuser, owns the tables<br/>used by Alembic only"]
+    app["mutable_app<br/>not an owner, not a superuser<br/>used by the running API"]
     policy{{"policy tenant_isolation, on every table<br/>USING and WITH CHECK:<br/>tenant_id = current_setting('app.tenant_id')"}}
     tables[("tenants · memory_facts<br/>memory_preferences · memory_episodes")]
 
@@ -449,7 +449,7 @@ The eval report is also written to the run's summary page, readable from the PR'
 | `app/models.py` | SQLAlchemy models — the tables |
 | `app/schemas.py` | Pydantic models — the API's request and response shapes |
 | `app/routers/` | One file per memory type: create, list current, get by id, delete |
-| `migrations/versions/` | Seven migrations, in order: pgvector → tenants → facts → preferences → episodes → app role → RLS |
+| `migrations/versions/` | Seven migrations, numbered in the order they run: `0001` pgvector → `0002` tenants → `0003` facts → `0004` preferences → `0005` episodes → `0006` app role → `0007` RLS |
 | `tests/` | API tests per type, the direct-Postgres isolation test, read_data / write_data / run_eval tests |
 | `eval/personas.md` | Design doc for the two fictional users |
 | `eval/data/` | The data: records, questions with their expected answers, and held-out questions per persona |

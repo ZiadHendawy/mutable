@@ -1,0 +1,61 @@
+"""add memory_preferences table
+
+Revision ID: 0004
+Revises: 0003
+Create Date: 2026-08-29 07:23:01.908319
+
+"""
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = "0004"
+down_revision: str | None = "0003"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "memory_preferences",
+        sa.Column("id", sa.UUID(), nullable=False),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("confidence", sa.Float(), nullable=False),
+        sa.Column("strength", sa.Float(), nullable=False),
+        sa.Column("superseded_by", sa.UUID(), nullable=True),
+        sa.Column("source", sa.Text(), nullable=True),
+        sa.Column(
+            "valid_from",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column("valid_to", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="ck_memory_preferences_confidence_range"
+        ),
+        sa.CheckConstraint(
+            "strength >= -1 AND strength <= 1", name="ck_memory_preferences_strength_range"
+        ),
+        sa.ForeignKeyConstraint(["superseded_by"], ["memory_preferences.id"]),
+        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        op.f("ix_memory_preferences_tenant_id"), "memory_preferences", ["tenant_id"], unique=False
+    )
+
+
+def downgrade() -> None:
+    op.drop_index(op.f("ix_memory_preferences_tenant_id"), table_name="memory_preferences")
+    op.drop_table("memory_preferences")
