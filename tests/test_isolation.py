@@ -1,56 +1,26 @@
-import uuid
-
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
 from app.config import settings
-from app.main import app
-
-client = TestClient(app)
-
-TENANT_A = str(uuid.uuid4())
-TENANT_B = str(uuid.uuid4())
 
 TABLES = ("memory_facts", "memory_preferences", "memory_episodes")
 
 
-def _headers(tenant_id: str) -> dict[str, str]:
-    return {"X-Tenant-Id": tenant_id}
-
-
-def _write_rows(tenant_id: str) -> None:
-    assert (
-        client.post(
-            "/facts", json={"content": "a fact", "confidence": 0.9}, headers=_headers(tenant_id)
-        ).status_code
-        == 201
-    )
-    assert (
-        client.post(
-            "/preferences",
-            json={"content": "a preference", "confidence": 0.8, "strength": 0.5},
-            headers=_headers(tenant_id),
-        ).status_code
-        == 201
-    )
-    assert (
-        client.post(
+def _write_rows(tenant) -> None:
+    for path, payload in (
+        ("/facts", {"content": "a fact", "confidence": 0.9}),
+        ("/preferences", {"content": "a preference", "confidence": 0.8, "strength": 0.5}),
+        (
             "/episodes",
-            json={
-                "content": "an episode",
-                "confidence": 0.7,
-                "event_time": "2026-03-04T14:00:00Z",
-            },
-            headers=_headers(tenant_id),
-        ).status_code
-        == 201
-    )
+            {"content": "an episode", "confidence": 0.7, "event_time": "2026-03-04T14:00:00Z"},
+        ),
+    ):
+        assert tenant.post(path, json=payload).status_code == 201
 
 
-def test_direct_postgres_session_enforces_tenant_isolation() -> None:
+def test_direct_postgres_session_enforces_tenant_isolation(tenant, other_tenant) -> None:
     # Write real rows for two tenants through the actual API -- not raw SQL.
-    _write_rows(TENANT_A)
-    _write_rows(TENANT_B)
+    _write_rows(tenant)
+    _write_rows(other_tenant)
 
     # Bypass the API entirely: connect straight to Postgres as the same
     # restricted role the running API itself uses (settings.database_url,
@@ -58,18 +28,10 @@ def test_direct_postgres_session_enforces_tenant_isolation() -> None:
     # database layer for all three memory types.
     engine = create_engine(settings.database_url)
     with engine.connect() as conn:
-        conn.execute(text("SELECT set_config('app.tenant_id', :t, false)"), {"t": TENANT_A})
-        for table in TABLES:
-            tenant_ids = {
-                str(row) for row in conn.execute(text(f"SELECT tenant_id FROM {table}")).scalars()
-            }
-            assert TENANT_A in tenant_ids
-            assert TENANT_B not in tenant_ids
-
-        conn.execute(text("SELECT set_config('app.tenant_id', :t, false)"), {"t": TENANT_B})
-        for table in TABLES:
-            tenant_ids = {
-                str(row) for row in conn.execute(text(f"SELECT tenant_id FROM {table}")).scalars()
-            }
-            assert TENANT_B in tenant_ids
-            assert TENANT_A not in tenant_ids
+        for me, them in ((tenant, other_tenant), (other_tenant, tenant)):
+            conn.execute(text("SELECT set_config('app.tenant_id', :t, false)"), {"t": me.id})
+            for table in TABLES:
+                rows = conn.execute(text(f"SELECT tenant_id FROM {table}")).scalars()
+                tenant_ids = {str(row) for row in rows}
+                assert me.id in tenant_ids, table
+                assert them.id not in tenant_ids, table
