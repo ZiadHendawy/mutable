@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from eval.read_data import load_persona
-from eval.write_data import WriteError, write_persona
+from eval.write_data import PATHS, WriteError, write_persona
 
 client = TestClient(app)
 
@@ -13,20 +13,19 @@ def _headers(tenant_id) -> dict[str, str]:
 
 
 def test_writes_every_record_under_a_fresh_tenant() -> None:
-    records = load_persona("maya").records
-    written = write_persona(client, records)
+    persona = load_persona("maya")
+    written = write_persona(client, "maya", persona)
 
+    records = persona.records
     assert set(written.ids) == {r.key for r in records.all_records()}
     for key, id_ in written.ids.items():
-        path = {"fact": "facts", "preference": "preferences", "episode": "episodes"}[
-            records.record_type(key)
-        ]
-        response = client.get(f"/{path}/{id_}", headers=_headers(written.tenant_id))
+        path = PATHS[records.record_type(key)]
+        response = client.get(f"{path}/{id_}", headers=_headers(written.tenant_id))
         assert response.status_code == 200, key
 
 
 def test_supersede_chain_written_with_real_history() -> None:
-    written = write_persona(client, load_persona("maya").records)
+    written = write_persona(client, "maya", load_persona("maya"))
     headers = _headers(written.tenant_id)
 
     old = client.get(f"/preferences/{written.ids['maya.pref.diet.v1']}", headers=headers).json()
@@ -37,27 +36,27 @@ def test_supersede_chain_written_with_real_history() -> None:
 
 
 def test_each_run_gets_its_own_tenant() -> None:
-    records = load_persona("maya").records
-    first = write_persona(client, records)
-    second = write_persona(client, records)
+    maya = load_persona("maya")
+    first = write_persona(client, "maya", maya)
+    second = write_persona(client, "maya", maya)
 
     assert first.tenant_id != second.tenant_id
     assert set(first.ids.values()).isdisjoint(second.ids.values())
 
 
 def test_written_personas_are_isolated() -> None:
-    maya = write_persona(client, load_persona("maya").records)
-    jonas = write_persona(client, load_persona("jonas").records)
+    maya = write_persona(client, "maya", load_persona("maya"))
+    jonas = write_persona(client, "jonas", load_persona("jonas"))
 
     visible_to_jonas = client.get("/facts", headers=_headers(jonas.tenant_id)).json()
     assert {f["id"] for f in visible_to_jonas}.isdisjoint(str(i) for i in maya.ids.values())
 
 
 def test_rejected_record_raises_with_its_key() -> None:
-    records = load_persona("jonas").records
+    jonas = load_persona("jonas")
     # Assignment isn't validated, so this slips past read_data.py's checks and
     # simulates the API refusing a record.
-    records.facts[0].confidence = 5.0
+    jonas.records.facts[0].confidence = 5.0
 
     with pytest.raises(WriteError, match="jonas.fact.lives_in_munich"):
-        write_persona(client, records)
+        write_persona(client, "jonas", jonas)

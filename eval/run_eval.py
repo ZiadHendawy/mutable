@@ -1,7 +1,15 @@
-"""Run the eval: write every persona into the API, then score isolation, supersede handling,
-and retrieval.
+"""Run the eval: write every persona into the API, run every check, print the report.
 
     python -m eval.run_eval [--base-url http://localhost:8000] [--require-retrieval]
+
+One module per step, in the order they run:
+
+    read_data.py        read the data files and reject mistakes
+    write_data.py       write each persona into the app as a fresh tenant
+    check_isolation.py  no persona can reach another persona's records
+    check_supersede.py  preference history is stored the way the files describe it
+    score_retrieval.py  ask every question, compare the results with the expected answers
+    report.py           totals, pass/fail, and the printed table
 
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
 metrics are reported against the README's bars but only gate the run with
@@ -14,297 +22,25 @@ sets to the bars.
 
 import argparse
 import sys
-import uuid
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
 
 import httpx
 
-from eval.read_data import Persona, Question, RecordType, load_persona
-from eval.write_data import WrittenPersona, write_persona
-
-PERSONAS = ["maya", "jonas"]
-PATHS: dict[RecordType, str] = {
-    "fact": "/facts",
-    "preference": "/preferences",
-    "episode": "/episodes",
-}
-RECALL_BAR = 0.9
-MRR_BAR = 0.8
-
-
-@dataclass
-class Retrieved:
-    ids: list[uuid.UUID]  # ranked, best first
-    route: set[RecordType] | None = None  # types the router chose, if it reports them
-
-
-# (client, tenant id, question text) -> ranked results. Gets only what a real caller has --
-# the question text -- never the expected answers.
-Retriever = Callable[[httpx.Client, uuid.UUID, str], Retrieved]
-
-
-def no_search(client: httpx.Client, tenant_id: uuid.UUID, question: str) -> Retrieved:
-    """Placeholder until milestone 4 adds search: finds nothing."""
-    return Retrieved(ids=[])
-
-
-@dataclass
-class EvalTenant:
-    name: str
-    persona: Persona
-    written: WrittenPersona
-
-    @property
-    def key_of(self) -> dict[uuid.UUID, str]:
-        return {id_: key for key, id_ in self.written.ids.items()}
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {"X-Tenant-Id": str(self.written.tenant_id)}
-
-
-def write_all(client: httpx.Client, names: list[str] = PERSONAS) -> list[EvalTenant]:
-    # Load (and so validate) everything before writing anything.
-    personas = {name: load_persona(name) for name in names}
-    return [
-        EvalTenant(name, persona, write_persona(client, persona.records))
-        for name, persona in personas.items()
-    ]
-
-
-# --- Isolation --------------------------------------------------------------------------
-
-
-def check_isolation(client: httpx.Client, tenants: list[EvalTenant]) -> tuple[list[str], int]:
-    """Every record, fetched by id and via every list endpoint, as every *other* tenant.
-
-    Returns (leaks, number of probes made).
-    """
-    leaks: list[str] = []
-    probes = 0
-    for owner in tenants:
-        owned = owner.key_of
-        for other in tenants:
-            if other is owner:
-                continue
-            for key, id_ in owner.written.ids.items():
-                path = PATHS[owner.persona.records.record_type(key)]
-                status = client.get(f"{path}/{id_}", headers=other.headers).status_code
-                probes += 1
-                if status != 404:
-                    leaks.append(f"{other.name} got {status} for {owner.name}'s {key}")
-            for path in PATHS.values():
-                listed = client.get(path, headers=other.headers).json()
-                probes += 1
-                for row in listed:
-                    id_ = uuid.UUID(row["id"])
-                    if id_ in owned:
-                        leaks.append(f"{other.name} sees {owned[id_]} in GET {path}")
-    return leaks, probes
-
-
-# --- Supersede handling -----------------------------------------------------------------
-
-
-def check_supersede(client: httpx.Client, tenant: EvalTenant) -> list[str]:
-    """Checks the API's actual state, not the data files: every chain is linked and tiles in
-    time, and every preference-evolution question's expected/must_exclude agrees with it."""
-    records = tenant.persona.records
-    ids = tenant.written.ids
-    rows = {
-        p.key: client.get(f"/preferences/{ids[p.key]}", headers=tenant.headers).json()
-        for p in records.preferences
-    }
-    current = {
-        uuid.UUID(r["id"]) for r in client.get("/preferences", headers=tenant.headers).json()
-    }
-    successor = records.successor_of()
-    failures: list[str] = []
-
-    for key, row in rows.items():
-        nxt = successor.get(key)
-        if nxt is None:
-            if row["valid_to"] is not None or row["superseded_by"] is not None:
-                failures.append(f"{key} should be current but is closed")
-            if ids[key] not in current:
-                failures.append(f"{key} is missing from GET /preferences")
-            continue
-        if row["superseded_by"] != str(ids[nxt]):
-            failures.append(f"{key} should be superseded_by {nxt}")
-        if row["valid_to"] is None or _dt(row["valid_to"]) != _dt(rows[nxt]["valid_from"]):
-            failures.append(f"{key} should close exactly when {nxt} starts")
-        if ids[key] in current:
-            failures.append(f"{key} is superseded but still listed as current")
-
-    for q in _evolution_questions(tenant.persona):
-        expected = [k for k in q.expected if k in rows]
-        excluded = [k for k in q.must_exclude if k in rows]
-        if q.category == "preference_current":
-            failures += [
-                f"{q.id}: expected {k} is not current" for k in expected if ids[k] not in current
-            ]
-            failures += [
-                f"{q.id}: excluded {k} is still current" for k in excluded if ids[k] in current
-            ]
-        if q.as_of is not None:
-            when = q.as_of.date()
-            failures += [
-                f"{q.id}: expected {k} was not valid on {when}"
-                for k in expected
-                if not _valid_at(rows[k], q.as_of)
-            ]
-            failures += [
-                f"{q.id}: excluded {k} was valid on {when}"
-                for k in excluded
-                if _valid_at(rows[k], q.as_of)
-            ]
-    return [f"{tenant.name}: {f}" for f in failures]
-
-
-def _evolution_questions(persona: Persona) -> list[Question]:
-    return [
-        q
-        for q in persona.questions
-        if q.category in ("preference_current", "preference_historical")
-    ]
-
-
-def _dt(value: str) -> datetime:
-    return datetime.fromisoformat(value)
-
-
-def _valid_at(row: dict, when: datetime) -> bool:
-    if _dt(row["valid_from"]) > when:
-        return False
-    return row["valid_to"] is None or when < _dt(row["valid_to"])
-
-
-# --- Retrieval --------------------------------------------------------------------------
-
-
-@dataclass
-class QuestionResult:
-    question: Question
-    missing: list[str]  # expected keys not in the top k
-    excluded_hits: list[str]  # must_exclude keys that made the top k
-    leaked: list[str]  # top-k results that belong to another tenant
-    reciprocal_rank: float
-    route_ok: bool | None  # None when the retriever doesn't report a route
-
-    @property
-    def recall(self) -> float:
-        expected = self.question.expected
-        return (len(expected) - len(self.missing)) / len(expected)
-
-    @property
-    def passed(self) -> bool:
-        return not (self.missing or self.excluded_hits or self.leaked)
-
-
-def score_question(
-    question: Question,
-    retrieved: Retrieved,
-    tenant: EvalTenant,
-    others: list[EvalTenant],
-    k: int,
-) -> QuestionResult:
-    own = tenant.key_of
-    top = retrieved.ids[:k]
-    top_keys = [own[id_] for id_ in top if id_ in own]
-
-    leaked = []
-    for id_ in top:
-        if id_ in own:
-            continue
-        owner = next((o for o in others if id_ in o.key_of), None)
-        leaked.append(owner.key_of[id_] if owner else f"id {id_} from another tenant")
-
-    rank = next((i for i, key in enumerate(top_keys, 1) if key in question.expected), None)
-    route_ok = None
-    if retrieved.route is not None:
-        route_ok = retrieved.route == tenant.persona.expected_route(question)
-    return QuestionResult(
-        question=question,
-        missing=[key for key in question.expected if key not in top_keys],
-        excluded_hits=[key for key in question.must_exclude if key in top_keys],
-        leaked=leaked,
-        reciprocal_rank=1 / rank if rank else 0.0,
-        route_ok=route_ok,
-    )
-
-
-# --- Run & report -----------------------------------------------------------------------
-
-
-@dataclass
-class Report:
-    tenants: list[EvalTenant]
-    retriever: str
-    k: int
-    isolation_leaks: list[str]
-    isolation_probes: int
-    supersede_failures: list[str]
-    results: list[QuestionResult]
-    heldout: list[QuestionResult]  # reported only in aggregate
-
-    @property
-    def retrieval_leaks(self) -> int:
-        return sum(len(r.leaked) for r in [*self.results, *self.heldout])
-
-    @property
-    def leaks(self) -> int:
-        return len(self.isolation_leaks) + self.retrieval_leaks
-
-    @property
-    def recall(self) -> float:
-        return _mean(r.recall for r in self.results)
-
-    @property
-    def mrr(self) -> float:
-        return _mean(r.reciprocal_rank for r in self.results)
-
-    @property
-    def heldout_meets_bars(self) -> bool:
-        if not self.heldout:
-            return True
-        return (
-            _mean(r.recall for r in self.heldout) >= RECALL_BAR
-            and _mean(r.reciprocal_rank for r in self.heldout) >= MRR_BAR
-        )
-
-    def passed(self, require_retrieval: bool = False) -> bool:
-        gates = self.leaks == 0 and not self.supersede_failures
-        if require_retrieval:
-            gates = (
-                gates
-                and self.recall >= RECALL_BAR
-                and self.mrr >= MRR_BAR
-                and self.heldout_meets_bars
-            )
-        return gates
+from eval.check_isolation import check_isolation
+from eval.check_supersede import check_supersede
+from eval.report import Report, format_report
+from eval.score_retrieval import Retriever, no_search, score_all
+from eval.write_data import WrittenPersona, write_all
 
 
 def evaluate(
     client: httpx.Client,
-    tenants: list[EvalTenant],
+    tenants: list[WrittenPersona],
     retriever: Retriever = no_search,
     k: int = 5,
 ) -> Report:
     leaks, probes = check_isolation(client, tenants)
     supersede = [f for t in tenants for f in check_supersede(client, t)]
-    results: list[QuestionResult] = []
-    heldout: list[QuestionResult] = []
-    for tenant in tenants:
-        others = [t for t in tenants if t is not tenant]
-        for questions, scored in (
-            (tenant.persona.questions, results),
-            (tenant.persona.heldout, heldout),
-        ):
-            for q in questions:
-                retrieved = retriever(client, tenant.written.tenant_id, q.question)
-                scored.append(score_question(q, retrieved, tenant, others, k))
+    results, heldout = score_all(client, tenants, retriever, k)
     return Report(
         tenants=tenants,
         retriever=getattr(retriever, "__name__", type(retriever).__name__),
@@ -315,85 +51,6 @@ def evaluate(
         results=results,
         heldout=heldout,
     )
-
-
-def format_report(report: Report, require_retrieval: bool = False) -> str:
-    k = report.k
-    written = ", ".join(f"{t.name}: {len(t.written.ids)} records" for t in report.tenants)
-    links = sum(len(t.persona.records.successor_of()) for t in report.tenants)
-    evolution = sum(len(_evolution_questions(t.persona)) for t in report.tenants)
-    lines = [
-        f"Mutable eval -- wrote {written}; retriever: {report.retriever}",
-        "",
-        "Gates",
-        f"  Cross-tenant leaks   {report.leaks:>4}   {_mark(report.leaks == 0)}"
-        f"   ({report.isolation_probes} isolation probes + retrieval results)",
-        f"  Supersede failures   {len(report.supersede_failures):>4}"
-        f"   {_mark(not report.supersede_failures)}"
-        f"   ({links} supersede links, {evolution} preference-evolution questions)",
-        "",
-        f"Retrieval (k={k})              n   Recall@{k}     MRR   excluded hits",
-    ]
-    categories = sorted({r.question.category for r in report.results})
-    for category in [*categories, "all"]:
-        rows = [r for r in report.results if category in ("all", r.question.category)]
-        lines.append(_metrics_row(category, rows))
-    if report.heldout:
-        lines.append(_metrics_row("held-out", report.heldout))
-    heldout = f"; held-out {_mark(report.heldout_meets_bars)}" if report.heldout else ""
-    gating = "" if require_retrieval else "  (not gating; pass --require-retrieval)"
-    lines.append(
-        f"  Bars: Recall@{k} >= {RECALL_BAR} {_mark(report.recall >= RECALL_BAR)},"
-        f" MRR >= {MRR_BAR} {_mark(report.mrr >= MRR_BAR)}{heldout}{gating}"
-    )
-    routed = [r.route_ok for r in report.results if r.route_ok is not None]
-    routing = f"{_mean(routed):.2f}" if routed else "n/a (retriever reports no route)"
-    lines.append(f"  Routing accuracy: {routing}")
-
-    if report.isolation_leaks or report.supersede_failures:
-        lines += ["", "Gate failures"]
-        lines += [f"  leak: {leak}" for leak in report.isolation_leaks]
-        lines += [f"  supersede: {failure}" for failure in report.supersede_failures]
-
-    failed = [r for r in report.results if not r.passed]
-    if failed:
-        lines += ["", f"Failed questions ({len(failed)}/{len(report.results)})"]
-        for r in failed:
-            q = r.question
-            lines.append(f"  {q.id} [{q.category}] {q.question}")
-            if r.missing:
-                lines.append(f"       missing:  {', '.join(r.missing)}")
-            if r.excluded_hits:
-                lines.append(f"       excluded but returned:  {', '.join(r.excluded_hits)}")
-            if r.leaked:
-                lines.append(f"       LEAKED:   {', '.join(r.leaked)}")
-
-    # A leak is a security failure, not a ranking miss, so it's named even here -- by id
-    # only. Anything else about a held-out question stays out of the report.
-    heldout_leaks = [r for r in report.heldout if r.leaked]
-    if heldout_leaks:
-        lines += ["", f"Held-out leaks ({len(heldout_leaks)}/{len(report.heldout)})"]
-        lines += [f"  {r.question.id}  LEAKED:   {', '.join(r.leaked)}" for r in heldout_leaks]
-
-    lines += ["", "PASS" if report.passed(require_retrieval) else "FAIL"]
-    return "\n".join(lines)
-
-
-def _metrics_row(label: str, rows: list[QuestionResult]) -> str:
-    return (
-        f"  {label:<24}{len(rows):>5}{_mean(r.recall for r in rows):>11.2f}"
-        f"{_mean(r.reciprocal_rank for r in rows):>8.2f}"
-        f"{sum(len(r.excluded_hits) for r in rows):>16}"
-    )
-
-
-def _mean(values) -> float:
-    values = list(values)
-    return sum(values) / len(values) if values else 0.0
-
-
-def _mark(ok: bool) -> str:
-    return "ok  " if ok else "FAIL"
 
 
 def main() -> None:
