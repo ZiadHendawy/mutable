@@ -2,7 +2,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db import get_db, get_tenant_db
+from app.db import TENANT_DB, get_db
 from app.routers import episodes, facts, preferences
 
 app = FastAPI(title="Mutable")
@@ -23,6 +23,6 @@ def health_db(db: Session = Depends(get_db)) -> dict[str, str]:
 
 
 @app.get("/whoami")
-def whoami(db: Session = Depends(get_tenant_db)) -> dict[str, str]:
+def whoami(db: Session = TENANT_DB) -> dict[str, str]:
     tenant_id = db.execute(text("SELECT current_setting('app.tenant_id')")).scalar_one()
     return {"tenant_id": tenant_id}

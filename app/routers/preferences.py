@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import get_tenant_db, get_tenant_id
+from app.db import TENANT_DB, get_tenant_id
 from app.models import MemoryPreference
 from app.schemas import MemoryPreferenceCreate, MemoryPreferenceRead
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/preferences", tags=["preferences"])
 def create_preference(
     payload: MemoryPreferenceCreate,
     tenant_id: uuid.UUID = Depends(get_tenant_id),
-    db: Session = Depends(get_tenant_db),
+    db: Session = TENANT_DB,
 ) -> MemoryPreference:
     # exclude_none so an omitted valid_from falls through to the server default.
     data = payload.model_dump(exclude={"supersedes"}, exclude_none=True)
@@ -30,9 +30,7 @@ def create_preference(
         if old is None:
             raise HTTPException(status_code=404, detail="Preference to supersede not found")
         if old.valid_to is not None:
-            raise HTTPException(
-                status_code=409, detail="Preference to supersede is already closed"
-            )
+            raise HTTPException(status_code=409, detail="Preference to supersede is already closed")
         if preference.valid_from < old.valid_from:
             raise HTTPException(
                 status_code=422,
@@ -50,7 +48,7 @@ def create_preference(
 
 
 @router.get("", response_model=list[MemoryPreferenceRead])
-def list_preferences(db: Session = Depends(get_tenant_db)) -> Sequence[MemoryPreference]:
+def list_preferences(db: Session = TENANT_DB) -> Sequence[MemoryPreference]:
     stmt = (
         select(MemoryPreference)
         .where(MemoryPreference.valid_to.is_(None))
@@ -60,9 +58,7 @@ def list_preferences(db: Session = Depends(get_tenant_db)) -> Sequence[MemoryPre
 
 
 @router.get("/{preference_id}", response_model=MemoryPreferenceRead)
-def get_preference(
-    preference_id: uuid.UUID, db: Session = Depends(get_tenant_db)
-) -> MemoryPreference:
+def get_preference(preference_id: uuid.UUID, db: Session = TENANT_DB) -> MemoryPreference:
     preference = db.get(MemoryPreference, preference_id)
     if preference is None:
         raise HTTPException(status_code=404, detail="Preference not found")
@@ -70,8 +66,20 @@ def get_preference(
 
 
 @router.delete("/{preference_id}", status_code=204)
-def delete_preference(preference_id: uuid.UUID, db: Session = Depends(get_tenant_db)) -> None:
+def delete_preference(preference_id: uuid.UUID, db: Session = TENANT_DB) -> None:
     preference = db.get(MemoryPreference, preference_id)
     if preference is None:
         raise HTTPException(status_code=404, detail="Preference not found")
+    # An older version whose superseded_by points here would be left linking to
+    # nothing, breaking its history chain. Refuse clearly rather than let the
+    # foreign key fail at commit.
+    replaced = db.scalar(
+        select(MemoryPreference.id).where(MemoryPreference.superseded_by == preference_id)
+    )
+    if replaced is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Preference replaced an older version ({replaced}); deleting it would "
+            "break that version's history",
+        )
     db.delete(preference)

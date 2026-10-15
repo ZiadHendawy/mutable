@@ -156,3 +156,25 @@ def test_supersede_rejects_new_valid_from_before_old() -> None:
     # Rejected write is rolled back: the old record is still open.
     old_after = client.get(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).json()
     assert old_after["valid_to"] is None
+
+
+def test_delete_preference_that_replaced_another_conflicts() -> None:
+    old = _create(TENANT_A, content="tea")
+    new = _create(TENANT_A, content="coffee", supersedes=old["id"])
+
+    response = client.delete(f"/preferences/{new['id']}", headers=_headers(TENANT_A))
+    assert response.status_code == 409
+    assert old["id"] in response.json()["detail"]
+    # Refused means refused: both versions and their link are intact.
+    assert client.get(f"/preferences/{new['id']}", headers=_headers(TENANT_A)).status_code == 200
+    old_after = client.get(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).json()
+    assert old_after["superseded_by"] == new["id"]
+
+
+def test_delete_oldest_version_of_a_chain_is_allowed() -> None:
+    old = _create(TENANT_A, content="tea")
+    new = _create(TENANT_A, content="coffee", supersedes=old["id"])
+
+    assert client.delete(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).status_code == 204
+    assert client.get(f"/preferences/{old['id']}", headers=_headers(TENANT_A)).status_code == 404
+    assert client.get(f"/preferences/{new['id']}", headers=_headers(TENANT_A)).status_code == 200

@@ -148,15 +148,15 @@ sequenceDiagram
         R->>PG: old.valid_to = new.valid_from, old.superseded_by = new.id
     end
     R-->>F: ORM object
-    F-->>C: 201 Created, serialized via MemoryPreferenceRead
     D->>PG: COMMIT in the dependency's cleanup, or ROLLBACK on error
+    F-->>C: 201 Created, serialized via MemoryPreferenceRead (a failed commit gives 500 instead)
 ```
 
 Three details make tenant scoping hold:
 
 - **`set_config(..., is_local = true)`** scopes the tenant to *this transaction only*. Pooled connections get reused across requests; a session-wide setting would leak one request's tenant into the next.
 - **The tenant row is inserted implicitly** on first use — no signup. Safe because `tenants` has an RLS policy too: a caller can only ever insert *their own* id.
-- **One transaction per request**, committed at the very end. Committing earlier would end the transaction and with it the tenant setting, before the endpoint's own queries ran.
+- **One transaction per request**, committed at the very end — but *before* the response is sent (`TENANT_DB` uses FastAPI's `scope="function"`), so a failed commit can never be reported as a success. Committing earlier would end the transaction and with it the tenant setting, before the endpoint's own queries ran.
 
 ### Isolation: two roles and one policy
 
@@ -462,7 +462,7 @@ The harness report is also written to the run's summary page, readable from the 
 ### Known gaps (honest list)
 
 - **No authentication yet.** The API trusts whatever `X-Tenant-Id` it's given, so anyone who knows or guesses a tenant id can act as that tenant. RLS guarantees tenants can't see *each other* — not that a caller is who they claim. Real auth is milestone 7.
-- **Deletes are hard deletes,** which sits awkwardly with "never lose history" — and there's a bug: the commit runs in `get_tenant_db`'s cleanup, *after* the response is sent, so an error that only surfaces at commit time is reported to the caller as success. Example: deleting a preference that an older version still points to via `superseded_by` returns `204`, but the row is not deleted.
+- **Deletes are hard deletes,** which sits awkwardly with "never lose history". Deleting a preference that an older version points to is refused (`409`) so chains can't break, but there's no soft-delete or undo yet.
 - **Facts can't be superseded** — only preferences version (see the data model table).
 - **No search yet.** pgvector is installed but unused; embeddings, hybrid search, and the router are milestone 4.
 - **Sync endpoints.** Routes are plain `def`, so FastAPI runs them in a thread pool. Simple and fine at this scale; async SQLAlchemy is an option if load ever demands it.
