@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import TENANT_DB, get_tenant_id
+from app.embeddings import Embedder, get_embedder
 from app.models import MemoryEpisode
 from app.schemas import MemoryEpisodeCreate, MemoryEpisodeRead
 
@@ -16,9 +17,14 @@ router = APIRouter(prefix="/episodes", tags=["episodes"])
 def create_episode(
     payload: MemoryEpisodeCreate,
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    embedder: Embedder = Depends(get_embedder),
     db: Session = TENANT_DB,
 ) -> MemoryEpisode:
-    episode = MemoryEpisode(tenant_id=tenant_id, **payload.model_dump(exclude_none=True))
+    episode = MemoryEpisode(
+        tenant_id=tenant_id,
+        embedding=embedder.embed([payload.content])[0],
+        **payload.model_dump(exclude_none=True),
+    )
     db.add(episode)
     db.flush()
     db.refresh(episode)

@@ -80,6 +80,11 @@ Each type has its own table. All three share the same core columns:
 
 Preferences add `strength`, from −1 (dislike) to +1 (like), and `superseded_by`. Episodes add `event_time` and `event_time_end`.
 
+Two more columns hold `content` in the forms search needs. Both are filled in when the record is written, and the API never returns them:
+
+- `embedding`: the content's meaning, as a vector of 384 numbers (see [5.4](#turning-text-into-vectors-embeddingspy)). The API computes it with a small model that runs on the server.
+- `content_words`: the content's words, in the form Postgres's full-text search looks them up: each word reduced to its base form ("lives" becomes "live"), with common words like "in" left out. Postgres computes it from `content` itself.
+
 **How a change is stored.** Nothing is overwritten. The old version is closed exactly when the new one starts, and points to its replacement:
 
 ```mermaid
@@ -133,6 +138,7 @@ sequenceDiagram
     A->>A: check the body (bad input stops here: 422)
     A->>PG: begin transaction, set tenant for this transaction only
     A->>PG: create the tenant if this is its first request
+    A->>A: turn the content into a vector (its embedding)
     A->>PG: insert the new version (Postgres checks the tenant)
     opt the body names the version it replaces
         A->>PG: load the old version (another tenant's is invisible: 404)
@@ -165,10 +171,10 @@ Three details make this safe:
 | Tool | Role |
 |---|---|
 | **FastAPI + Pydantic** | The HTTP API. Requests are checked against typed schemas, and the tenant is attached to every request. |
-| **PostgreSQL 16** | Storage, constraints, Row-Level Security |
-| **pgvector** | Vector search inside Postgres, used from milestone 4 |
+| **PostgreSQL 16** | Storage, constraints, Row-Level Security, full-text search |
+| **pgvector** | Stores each record's vector inside Postgres, for vector search (milestone 4) |
 | **fastembed** | Runs the embedding model on the API's own CPU, for search (milestone 4) |
-| **SQLAlchemy + Alembic** | Tables as Python classes; numbered migrations `0001`–`0007` |
+| **SQLAlchemy + Alembic** | Tables as Python classes; numbered migrations `0001`–`0008` |
 | **Docker Compose** | The same database and API for every developer; milestone 6 deploys this same setup |
 | **pytest** | Tests run against a real Postgres, so the real isolation rules get tested |
 | **GitHub Actions** | Lint, tests and the full eval on every pull request |
@@ -215,7 +221,7 @@ Each milestone ships something that runs and can be checked on its own.
 |---|---|---|
 | 1 | Held-out questions: 20 more, never used for tuning | ✅ |
 | 2 | Embedding model behind one interface, plus a predictable fake for tests | ✅ |
-| 3 | Store each record's vector and full-text index when it's written | |
+| 3 | Store each record's vector and full-text index when it's written | ✅ |
 | 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | |
 | 5 | Hybrid search: add full-text, merge both rankings | |
 | 6 | Router, time scope: now, as of a date, or full history | |
@@ -491,7 +497,7 @@ mutable/
 ├── migrations/
 │   ├── env.py                    Alembic setup; connects as the superuser
 │   ├── script.py.mako            template for new migrations
-│   └── versions/0001 … 0007      the schema history, in run order
+│   └── versions/0001 … 0008      the schema history, in run order
 ├── eval/
 │   ├── data/maya/                records.yaml · questions.yaml · heldout.yaml
 │   ├── data/jonas/               records.yaml
@@ -504,8 +510,8 @@ mutable/
 │   ├── report.py                 step 4: totals, pass/fail, the printed table
 │   └── run_eval.py               runs steps 1–4; the command-line entry point
 ├── tests/
-│   ├── conftest.py               shared fixtures: client, tenant, other_tenant
-│   └── test_*.py                 API, isolation, transaction, embedding and eval tests
+│   ├── conftest.py               shared fixtures: client, tenant, other_tenant; the fake embedder
+│   └── test_*.py                 API, isolation, transaction, embedding, search-column and eval tests
 ├── docs/design.md                this document
 ├── Dockerfile · docker-compose.yml
 ├── alembic.ini · pyproject.toml · requirements.txt · requirements-dev.txt · .env.example
@@ -530,6 +536,7 @@ flowchart TB
     end
     subgraph data["Data access"]
         sqlalchemy["SQLAlchemy 2"] --> psycopg["psycopg 3<br/>driver"]
+        sqlalchemy --> pgvectorpy["pgvector (Python)<br/>vector column type"]
     end
     subgraph db["Database"]
         postgres[("PostgreSQL 16<br/>+ pgvector + RLS")]
@@ -560,7 +567,7 @@ flowchart TB
 | **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
 | **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
 | **Alembic** | 1.20 | ≥ 1.13 | `migrations/` | Numbered schema migrations |
-| **pgvector** (Python) | 0.5 | ≥ 0.3 | not imported yet | Vector column types for SQLAlchemy; used from milestone 4 |
+| **pgvector** (Python) | 0.5 | ≥ 0.3 | `app/models.py`, migration 0008 | `Vector`, the column type that stores a vector, for SQLAlchemy |
 | **fastembed** | 0.9 | ≥ 0.9 | `app/embeddings.py`, Dockerfile, CI | Downloads the embedding model once, then runs it on the CPU (through ONNX Runtime) |
 | **httpx** | 0.28 | ≥ 0.27, dev | `eval/`, `tests/` | HTTP client; same interface as `TestClient`, so eval code runs against both |
 | **PyYAML** | 6.0 | ≥ 6.0, dev | `eval/read_data.py` | Reads the eval's YAML files (`safe_load`) |
@@ -588,12 +595,16 @@ flowchart LR
     routers --> dbmod
     routers --> models["models.py"]
     routers --> schemas["schemas.py"]
+    routers --> embeddings["embeddings.py"]
+    models --> embeddings
     dbmod --> config["config.py"]
     env["migrations/env.py"] --> config
     env --> models
 ```
 
-`embeddings.py` isn't in the picture yet: it imports none of these, and none of them import it until [milestone 4's step 3](#21-now-milestone-4-search).
+- **The routers import `embeddings.py`** for the embedder that turns each new record's content into a vector.
+- **`models.py` imports only `DIMENSION` from it,** to size the vector column. Since `migrations/env.py` imports the models, Alembic loads the fastembed library too, but it never loads the model.
+- **`embeddings.py` imports none of the app's own modules,** so the Dockerfile can copy it in alone to download the model.
 
 **The eval, from the entry point down to the data files:**
 
@@ -676,20 +687,22 @@ flowchart TD
 | GET | `/health` | `health` | 200 | — | No database access |
 | GET | `/health/db` | `health_db` | 200 | 500 | `SELECT 1` through `get_db`; no tenant needed |
 | GET | `/whoami` | `whoami` | 200 | 422 | Returns the tenant as the database sees it |
-| POST | `/facts` | `create_fact` | 201 | 422 | |
+| POST | `/facts` | `create_fact` | 201 | 422 | Embeds the content |
 | GET | `/facts` | `list_facts` | 200 | 422 | Current only (`valid_to IS NULL`), newest first |
 | GET | `/facts/{id}` | `get_fact` | 200 | 404 | |
 | DELETE | `/facts/{id}` | `delete_fact` | 204 | 404 | Permanent |
-| POST | `/preferences` | `create_preference` | 201 | 404, 409, 422 | Supersede (below) |
+| POST | `/preferences` | `create_preference` | 201 | 404, 409, 422 | Embeds the content; supersede (below) |
 | GET | `/preferences` | `list_preferences` | 200 | 422 | Current only, newest first |
 | GET | `/preferences/{id}` | `get_preference` | 200 | 404 | Also returns closed, superseded versions |
 | DELETE | `/preferences/{id}` | `delete_preference` | 204 | 404, 409 | Refused if it replaced another version |
-| POST | `/episodes` | `create_episode` | 201 | 422 | End can't be before start |
+| POST | `/episodes` | `create_episode` | 201 | 422 | Embeds the content; end can't be before start |
 | GET | `/episodes` | `list_episodes` | 200 | 422 | Current only, latest event first |
 | GET | `/episodes/{id}` | `get_episode` | 200 | 404 | |
 | DELETE | `/episodes/{id}` | `delete_episode` | 204 | 404 | Permanent |
 
 Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header, and returns 422 without it. Endpoints are plain `def`, not `async`, so FastAPI runs them in a thread pool.
+
+**Creating a record embeds it.** The three `POST` endpoints also take the embedder (`Depends(get_embedder)`), turn the content into a vector, and store it in the new row's `embedding` column. No response includes the vector or `content_words`: 384 numbers per record would bury the useful fields.
 
 **What each status code means:**
 
@@ -698,7 +711,7 @@ Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header,
 | 200 / 201 / 204 | Success |
 | 404 | No record with that id, **or** it belongs to another tenant. The two are indistinguishable by design, so ids don't leak. |
 | 409 | Superseding a preference that's already closed, or deleting a preference that replaced another |
-| 422 | The body or header fails validation, or a replacement is dated before the record it replaces |
+| 422 | The body or header fails validation (an empty `content`, for example), or a replacement is dated before the record it replaces |
 | 500 | Anything unexpected, including a failed commit. The transaction is rolled back. |
 
 #### Creating and deleting a preference
@@ -707,7 +720,7 @@ Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header,
 flowchart TD
     start["POST /preferences"] --> valid{"body valid?"}
     valid -- no --> e422["422"]
-    valid -- yes --> insert["insert the new row, flush"]
+    valid -- yes --> insert["embed the content,<br/>insert the new row, flush"]
     insert --> sup{"supersedes<br/>given?"}
     sup -- no --> ok["201 Created"]
     sup -- yes --> found{"old row found?<br/>other tenants' rows are invisible"}
@@ -754,6 +767,8 @@ classDiagram
         valid_from: timestamptz, default now
         valid_to: timestamptz, optional
         created_at: timestamptz, default now
+        embedding: vector(384), optional
+        content_words: tsvector, computed from content
     }
     class MemoryPreference {
         <<memory_preferences>>
@@ -779,11 +794,21 @@ classDiagram
 
 | Table | Check constraints | Indexes |
 |---|---|---|
-| `memory_facts` | `ck_memory_facts_confidence_range` | `ix_memory_facts_tenant_id` |
-| `memory_preferences` | `ck_memory_preferences_confidence_range`, `ck_memory_preferences_strength_range` | `ix_memory_preferences_tenant_id` |
-| `memory_episodes` | `ck_memory_episodes_confidence_range`, `ck_memory_episodes_time_order` (end ≥ start) | `ix_memory_episodes_tenant_id`, `ix_memory_episodes_event_time` |
+| `memory_facts` | `ck_memory_facts_confidence_range` | `ix_memory_facts_tenant_id`, `ix_memory_facts_content_words` (GIN) |
+| `memory_preferences` | `ck_memory_preferences_confidence_range`, `ck_memory_preferences_strength_range` | `ix_memory_preferences_tenant_id`, `ix_memory_preferences_content_words` (GIN) |
+| `memory_episodes` | `ck_memory_episodes_confidence_range`, `ck_memory_episodes_time_order` (end ≥ start) | `ix_memory_episodes_tenant_id`, `ix_memory_episodes_event_time`, `ix_memory_episodes_content_words` (GIN) |
 
 The classes declare columns and foreign keys only, with no ORM `relationship()`, so every load is an explicit query. Ids are generated in Python (`uuid4`); timestamps default to the database's `now()`.
+
+**The two search columns** (the same in all three tables):
+
+| Column | Type | Filled in by | Notes |
+|---|---|---|---|
+| `embedding` | `vector(384)`, pgvector's type; `Vector(DIMENSION)` in Python | The create endpoint, from the embedder | Optional, because rows written before migration 0008 have none. Read back as a list of 384 numbers |
+| `content_words` | `tsvector`, Postgres's type for a text's searchable words | Postgres: a *generated* column, `to_tsvector('english', content)` (`Computed` in Python) | Computed on every insert or update, so it always matches `content`. "Lives in Lisbon" is stored as `'lisbon':3 'live':1`: each word in its base form, with its position, and "in" left out as too common |
+
+- **`content_words` has a GIN index,** Postgres's index for "which rows contain this word", like the index at the back of a book. It keeps word lookups fast as the tables grow.
+- **`embedding` has no index.** Search compares the question with every vector the tenant has. That's exact, and fast at this size; [gap 4.9](#49-search-is-not-built-yet) explains why an approximate index has to wait.
 
 #### Request and response classes: `schemas.py`
 
@@ -791,13 +816,13 @@ The classes declare columns and foreign keys only, with no ORM `relationship()`,
 classDiagram
     direction LR
     class MemoryFactCreate {
-        content: str
+        content: str, not empty
         confidence: float, 0 to 1
         source: optional
         valid_from: optional
     }
     class MemoryPreferenceCreate {
-        content: str
+        content: str, not empty
         confidence: float, 0 to 1
         strength: float, -1 to 1
         source: optional
@@ -805,7 +830,7 @@ classDiagram
         supersedes: UUID, optional
     }
     class MemoryEpisodeCreate {
-        content: str
+        content: str, not empty
         confidence: float, 0 to 1
         event_time: datetime, required
         event_time_end: optional
@@ -816,14 +841,17 @@ classDiagram
     class MemoryFactRead {
         <<from_attributes>>
         every column of memory_facts
+        except embedding, content_words
     }
     class MemoryPreferenceRead {
         <<from_attributes>>
         every column of memory_preferences
+        except embedding, content_words
     }
     class MemoryEpisodeRead {
         <<from_attributes>>
         every column of memory_episodes
+        except embedding, content_words
     }
     MemoryFactCreate ..> MemoryFactRead : POST /facts returns
     MemoryPreferenceCreate ..> MemoryPreferenceRead : POST /preferences returns
@@ -831,7 +859,8 @@ classDiagram
 ```
 
 - **`*Create` classes are what a caller may send.** They have no `id` or `tenant_id`; the server sets those. Unknown fields are ignored, not rejected, which is Pydantic's default.
-- **`*Read` classes are what comes back.** `from_attributes` lets them build straight from a table row.
+- **`content` can't be empty** (`min_length=1`). An empty text has no meaning to embed and no words to find, so it's rejected with a 422.
+- **`*Read` classes are what comes back.** `from_attributes` lets them build straight from a table row. They leave out `embedding` and `content_words`.
 - **An omitted `valid_from` falls through to the database default (now).** Endpoints drop empty fields before inserting (`exclude_none`).
 - **`supersedes` is an instruction, not a column.** It's removed before the insert and acted on separately.
 
@@ -844,26 +873,24 @@ flowchart TB
     iface["Embedder: the interface<br/>dimension · embed(texts) → one vector per text"]
     local["LocalEmbedder<br/>the real model, BAAI/bge-small-en-v1.5<br/>understands meaning"]
     fake["FakeEmbedder<br/>one position per word<br/>instant and predictable"]
-    app["the app's endpoints<br/>Depends(get_embedder)"]
+    app["the create endpoints<br/>Depends(get_embedder)"]
     tests["the API tests<br/>tests/conftest.py"]
 
     local -- implements --> iface
     fake -- implements --> iface
-    app -. "one shared instance<br/>(from milestone 4, step 3)" .-> local
-    tests -. "swapped in through app.dependency_overrides<br/>(from milestone 4, step 3)" .-> fake
+    app -- "one shared instance" --> local
+    tests -- "swapped in through<br/>app.dependency_overrides" --> fake
 ```
-
-The dashed lines don't exist yet: they arrive in [milestone 4's step 3](#21-now-milestone-4-search).
 
 | Name | What it is |
 |---|---|
-| `MODEL_NAME`, `DIMENSION` | `BAAI/bge-small-en-v1.5` and 384. Every vector has 384 numbers, and the database column will be sized to match, so changing the model means a migration and embedding every record again. That's why the model is a constant, not a setting |
+| `MODEL_NAME`, `DIMENSION` | `BAAI/bge-small-en-v1.5` and 384. Every vector has 384 numbers, and the database column is sized to match, so changing the model means a migration and embedding every record again. That's why the model is a constant, not a setting |
 | `Embedder` | The interface, a `typing.Protocol`: a `dimension`, and `embed(texts)`, which returns one vector per text, in order. Code that needs vectors depends on this, not on either class |
 | `LocalEmbedder` | The real one: the model, run on the CPU by fastembed. Related texts get close vectors even when they share no words. Vectors come back scaled to length 1 |
 | `FakeEmbedder` | For tests. Each word adds 1 to one of the 384 numbers, picked by a checksum of the word (`zlib.crc32`), and the vector is then scaled to length 1. So the same text gets the same vector in every run, and texts that share words get closer vectors. It knows nothing about meaning |
 | `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a moment, so it's never done per request |
 
-No endpoint uses the embedder yet. [Milestone 4's step 3](#21-now-milestone-4-search) embeds each record as it's written, and from then on the API tests swap in `FakeEmbedder`, so they stay fast and predictable.
+**Where it's used.** The three create endpoints embed each record's content once, as it's written, and store the vector in its `embedding` column. The API tests swap in `FakeEmbedder` (`tests/conftest.py`), so they never load the model, stay fast, and know exactly which vector each record gets.
 
 **Where the model comes from.** fastembed uses an ONNX copy of the model, `Qdrant/bge-small-en-v1.5-onnx-Q` on Hugging Face (about 65 MB). It downloads it the first time the model is loaded, into the folder named by the `FASTEMBED_CACHE_PATH` environment variable (fastembed's own setting), where it appears as `models--Qdrant--bge-small-en-v1.5-onnx-Q`. After that it reads it from disk, with no network.
 
@@ -875,7 +902,7 @@ No endpoint uses the embedder yet. [Milestone 4's step 3](#21-now-milestone-4-se
 
 ```mermaid
 flowchart LR
-    m1["0001<br/>pgvector"] --> m2["0002<br/>tenants"] --> m3["0003<br/>memory_facts"] --> m4["0004<br/>memory_preferences"] --> m5["0005<br/>memory_episodes"] --> m6["0006<br/>mutable_app user"] --> m7["0007<br/>Row-Level Security"]
+    m1["0001<br/>pgvector"] --> m2["0002<br/>tenants"] --> m3["0003<br/>memory_facts"] --> m4["0004<br/>memory_preferences"] --> m5["0005<br/>memory_episodes"] --> m6["0006<br/>mutable_app user"] --> m7["0007<br/>Row-Level Security"] --> m8["0008<br/>search columns"]
 ```
 
 | # | What it does |
@@ -887,6 +914,7 @@ flowchart LR
 | 0005 | `memory_episodes`, including the time-order constraint and the `event_time` index |
 | 0006 | Creates the `mutable_app` login user. It can use the schema, and read, insert, update and delete in the four tables, but nothing else: it can't create tables or change rules |
 | 0007 | Turns on Row-Level Security for all four tables, and adds the `tenant_isolation` rule to each |
+| 0008 | Adds the two search columns to the three memory tables: `embedding` (`vector(384)`) and `content_words` (generated from `content`), with a GIN index on `content_words`. Rows that already exist get their `content_words` at once, but no vector |
 
 The isolation rule, as created by 0007 (shown for `memory_facts`; the other tables are the same, and `tenants` checks `id`):
 
@@ -904,8 +932,10 @@ CREATE POLICY tenant_isolation ON memory_facts
 **Alembic's setup:**
 
 - **`migrations/env.py`** connects with `settings.admin_database_url`, the superuser, and points autogenerate at `Base.metadata`. `alembic check` confirms the models and migrations agree. It uses no connection pool, and supports an offline mode that only prints the SQL.
-- **`alembic.ini`** holds the folder location and logging, and notes how to number the next migration: `--rev-id 0008`.
+- **`alembic.ini`** holds the folder location and logging, and notes how to number the next migration: `--rev-id 0009`.
 - **`script.py.mako`** is the template for new migration files.
+
+**Why 0008 writes out 384** instead of importing `DIMENSION`: a migration records the schema as it was when it ran, so a later change of model gets a migration of its own. `alembic check` fails if the model's vector size and the database's ever disagree.
 
 ### 5.6 The eval (`eval/`)
 
@@ -1120,11 +1150,14 @@ flowchart LR
     tenant --> tc["TenantClient<br/>id · headers · get · post · delete<br/>sends X-Tenant-Id on every request"]
     other --> tc
     client --> evaltests["eval tests<br/>pass client to write_all / evaluate"]
+    fake["app.dependency_overrides<br/>get_embedder → FakeEmbedder"] --> client
 ```
 
 The tests follow three principles:
 
-- **Everything runs against the real Postgres, with no mocks.** The real constraints and Row-Level Security get tested. The one exception is `test_transactions.py`, which patches `Session.commit` to fail on purpose.
+- **Everything runs against the real Postgres.** The real constraints and Row-Level Security get tested. There are two stand-ins:
+  - **the embedder:** `conftest.py` swaps `FakeEmbedder` in for `get_embedder` (through `app.dependency_overrides`), so every record a test creates is embedded instantly, without loading the model, and with a vector the test can work out itself
+  - **a failing commit:** `test_transactions.py` patches `Session.commit` to fail on purpose
 - **Each test gets a brand-new tenant,** so tests can't see each other's rows, even across runs against the same database.
 - **`TestClient` calls the app in-process**, with no server running, and doubles as the HTTP client for the eval code.
 
@@ -1136,6 +1169,7 @@ The tests follow three principles:
 | `test_preferences.py` | The same, plus supersede:<br/>• closes the old version and links it to the new one<br/>• can't supersede twice (409), a missing one (404) or another tenant's (404)<br/>• backdated versions line up exactly<br/>• a replacement dated earlier is rejected and rolled back<br/>• deleting a version that replaced another is refused, but deleting the oldest is allowed |
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
+| `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |

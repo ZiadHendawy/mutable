@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class MemoryFactCreate(BaseModel):
-    content: str
+    content: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     source: str | None = None
     valid_from: datetime | None = None
@@ -26,7 +26,7 @@ class MemoryFactRead(BaseModel):
 
 
 class MemoryPreferenceCreate(BaseModel):
-    content: str
+    content: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     strength: float = Field(ge=-1, le=1)
     source: str | None = None
@@ -50,7 +50,7 @@ class MemoryPreferenceRead(BaseModel):
 
 
 class MemoryEpisodeCreate(BaseModel):
-    content: str
+    content: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     event_time: datetime
     event_time_end: datetime | None = None

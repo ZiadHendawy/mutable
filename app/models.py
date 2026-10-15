@@ -1,8 +1,30 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, CheckConstraint, DateTime, Float, ForeignKey, Text, func
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    UUID,
+    CheckConstraint,
+    Computed,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.embeddings import DIMENSION
+
+# Every memory table has two columns for search, both made from content:
+# - embedding: the content as a vector (see app/embeddings.py). The endpoint that creates a
+#   row fills it in. It's nullable because rows written before migration 0008 have none.
+# - content_words: the content's words, for full-text search. Postgres computes it from
+#   content and keeps it up to date. "english" reduces each word to its base form ("lives"
+#   becomes "live") and leaves out common words like "in".
+CONTENT_WORDS = "to_tsvector('english', content)"
 
 
 class Base(DeclarativeBase):
@@ -22,6 +44,7 @@ class MemoryFact(Base):
         CheckConstraint(
             "confidence >= 0 AND confidence <= 1", name="ck_memory_facts_confidence_range"
         ),
+        Index("ix_memory_facts_content_words", "content_words", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
@@ -34,6 +57,8 @@ class MemoryFact(Base):
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMENSION))
+    content_words: Mapped[str] = mapped_column(TSVECTOR, Computed(CONTENT_WORDS, persisted=True))
 
 
 class MemoryPreference(Base):
@@ -45,6 +70,7 @@ class MemoryPreference(Base):
         CheckConstraint(
             "strength >= -1 AND strength <= 1", name="ck_memory_preferences_strength_range"
         ),
+        Index("ix_memory_preferences_content_words", "content_words", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
@@ -61,6 +87,8 @@ class MemoryPreference(Base):
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMENSION))
+    content_words: Mapped[str] = mapped_column(TSVECTOR, Computed(CONTENT_WORDS, persisted=True))
 
 
 class MemoryEpisode(Base):
@@ -73,6 +101,7 @@ class MemoryEpisode(Base):
             "event_time_end IS NULL OR event_time_end >= event_time",
             name="ck_memory_episodes_time_order",
         ),
+        Index("ix_memory_episodes_content_words", "content_words", postgresql_using="gin"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, default=uuid.uuid4)
@@ -89,3 +118,5 @@ class MemoryEpisode(Base):
     valid_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(DIMENSION))
+    content_words: Mapped[str] = mapped_column(TSVECTOR, Computed(CONTENT_WORDS, persisted=True))

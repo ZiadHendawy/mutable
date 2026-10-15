@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import TENANT_DB, get_tenant_id
+from app.embeddings import Embedder, get_embedder
 from app.models import MemoryPreference
 from app.schemas import MemoryPreferenceCreate, MemoryPreferenceRead
 
@@ -16,11 +17,16 @@ router = APIRouter(prefix="/preferences", tags=["preferences"])
 def create_preference(
     payload: MemoryPreferenceCreate,
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    embedder: Embedder = Depends(get_embedder),
     db: Session = TENANT_DB,
 ) -> MemoryPreference:
     # exclude_none so an omitted valid_from falls through to the server default.
     data = payload.model_dump(exclude={"supersedes"}, exclude_none=True)
-    preference = MemoryPreference(tenant_id=tenant_id, **data)
+    preference = MemoryPreference(
+        tenant_id=tenant_id,
+        embedding=embedder.embed([payload.content])[0],
+        **data,
+    )
     db.add(preference)
     db.flush()
     db.refresh(preference)
