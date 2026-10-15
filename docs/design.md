@@ -767,7 +767,7 @@ classDiagram
         valid_from: timestamptz, default now
         valid_to: timestamptz, optional
         created_at: timestamptz, default now
-        embedding: vector(384), optional
+        embedding: vector, 384 numbers, optional
         content_words: tsvector, computed from content
     }
     class MemoryPreference {
