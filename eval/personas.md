@@ -2,7 +2,7 @@
 
 Design doc for the eval data: who the two personas are and why the data is shaped the way it
 is. The records themselves live in `eval/data/<persona>/`. Both personas are entirely fictional
-— no real personal data, per the README's eval contract.
+— no real personal data, per the eval's design ([design overview, section 3](../docs/design.md#3-evaluation)).
 
 ## Tenant A — Maya Chen
 
