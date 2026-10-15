@@ -62,7 +62,7 @@ jobs:
       - name: Eval
         run: |
           set +e
-          python -m eval.harness --base-url http://localhost:8000 > eval-report.txt
+          python -m eval.run_eval --base-url http://localhost:8000 > eval-report.txt
           status=$?
           cat eval-report.txt
           { echo '```'; cat eval-report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

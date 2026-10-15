@@ -18,7 +18,7 @@ def _headers(tenant_id: str) -> dict[str, str]:
     return {"X-Tenant-Id": tenant_id}
 
 
-def _seed_tenant(tenant_id: str) -> None:
+def _write_rows(tenant_id: str) -> None:
     assert (
         client.post(
             "/facts", json={"content": "a fact", "confidence": 0.9}, headers=_headers(tenant_id)
@@ -48,9 +48,9 @@ def _seed_tenant(tenant_id: str) -> None:
 
 
 def test_direct_postgres_session_enforces_tenant_isolation() -> None:
-    # Seed real rows for two tenants through the actual API -- not raw SQL.
-    _seed_tenant(TENANT_A)
-    _seed_tenant(TENANT_B)
+    # Write real rows for two tenants through the actual API -- not raw SQL.
+    _write_rows(TENANT_A)
+    _write_rows(TENANT_B)
 
     # Bypass the API entirely: connect straight to Postgres as the same
     # restricted role the running API itself uses (settings.database_url,

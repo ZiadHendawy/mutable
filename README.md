@@ -4,13 +4,13 @@ An AI personal assistant that reliably tracks how a user's mind changes, not jus
 
 ## Why
 
-Preferences change over time, and a memory system needs to handle that without losing history or confusing old state with current state. Every fact, preference, and episode here is typed and temporally-versioned: preferences are versioned, not overwritten, so when one changes, the old record is closed out and explicitly linked to its replacement. There's always exactly one current answer, and the full history stays queryable on request. The eval harness scores this directly, not just generic retrieval quality: a "current preference" question must exclude a superseded record, and a historical question must still retrieve the old one correctly.
+Preferences change over time, and a memory system needs to handle that without losing history or confusing old state with current state. Every fact, preference, and episode here is typed and temporally-versioned: preferences are versioned, not overwritten, so when one changes, the old record is closed out and explicitly linked to its replacement. There's always exactly one current answer, and the full history stays queryable on request. The eval scores this directly, not just generic retrieval quality: a "current preference" question must exclude a superseded record, and a historical question must still retrieve the old one correctly.
 
 Multi-tenant and isolated from day one, via Postgres Row-Level Security enforced as a database invariant rather than an application-level filter.
 
 **The direction:** this is the memory layer for a full AI personal assistant — one that can eventually act on a user's behalf (milestone 12) through whatever interface fits (milestone 10) — grounded in a record of who someone is that's actually kept up to date, not guesswork. It's a useful, standalone API on its own either way.
 
-**Status:** milestone 3 (eval dataset + harness) done — a 100-record persona with 75 gold questions, plus an isolation-only second tenant, seeded through the API and scored by a harness that runs on every PR. It reports zero cross-tenant leaks and correct supersede handling on all 20 preference-evolution questions; Recall/MRR read 0.00 until search lands in milestone 4. See the [Roadmap](#roadmap).
+**Status:** milestone 3 (eval data + eval runner) done — a 100-record persona with 75 questions and their expected answers, plus an isolation-only second tenant, written through the API and scored by an eval that runs on every PR. It reports zero cross-tenant leaks and correct supersede handling on all 20 preference-evolution questions; Recall/MRR read 0.00 until search lands in milestone 4. See the [Roadmap](#roadmap).
 
 ## Getting started
 
@@ -27,7 +27,7 @@ docker compose up
 
 Tests: `docker compose run --rm api pytest`. Lint: `docker compose run --rm api ruff check .`
 
-Eval (with the API running): `docker compose run --rm api python -m eval.harness --base-url http://api:8000` — seeds both personas as fresh tenants and prints the metrics table. Add `--require-retrieval` to also fail on the Recall/MRR bars. The dataset lives in `eval/data/`, its design in [`eval/personas.md`](eval/personas.md).
+Eval (with the API running): `docker compose run --rm api python -m eval.run_eval --base-url http://api:8000` — writes both personas as fresh tenants and prints the metrics table. Add `--require-retrieval` to also fail on the Recall/MRR bars. The data lives in `eval/data/`, its design in [`eval/personas.md`](eval/personas.md).
 
 ## Memory types
 
@@ -45,13 +45,13 @@ No Documents type — long-form text needs chunking, a different retrieval probl
 
 **Temporal validity, not overwrite.** `valid_from`/`valid_to` versions every row; a superseded preference points `superseded_by` at its replacement. A memory system that overwrites in place can't answer "what did I used to believe."
 
-**Retrieval routes before it searches.** A rule-based classifier reads the question (date expressions → episodes, "prefer/like/hate" → preferences, else facts) and produces type + time hints. Search then runs hybrid (pgvector + full-text) per hinted table, always inside the tenant's RLS boundary, and results merge by similarity + recency + confidence. An LLM-based router is a natural v2 — deferred because it adds latency, cost, and non-determinism to every query; the eval harness can A/B it against this baseline later.
+**Retrieval routes before it searches.** A rule-based classifier reads the question (date expressions → episodes, "prefer/like/hate" → preferences, else facts) and produces type + time hints. Search then runs hybrid (pgvector + full-text) per hinted table, always inside the tenant's RLS boundary, and results merge by similarity + recency + confidence. An LLM-based router is a natural v2 — deferred because it adds latency, cost, and non-determinism to every query; the eval can A/B it against this baseline later.
 
 **Confidence is caller-supplied**, not inferred — there's one source per fact until an extraction pipeline exists. Ingestion is structured JSON only, no free-text extraction, so writes stay deterministic and auditable.
 
 ## Eval contract
 
-Two synthetic tenants, no real user data in the repo. Tenant A carries the full seed set (100 records, 75 labeled questions) for retrieval quality, plus 20 held-out questions that are scored the same way but reported only as totals, so search is never tuned against them. Tenant B is a minimal second tenant that exists only to probe isolation.
+Two synthetic tenants, no real user data in the repo. Tenant A carries the full data (100 records, 75 labeled questions) for retrieval quality, plus 20 held-out questions that are scored the same way but reported only as totals, so search is never tuned against them. Tenant B is a minimal second tenant that exists only to probe isolation.
 
 | Metric | Bar |
 |---|---|
@@ -60,13 +60,13 @@ Two synthetic tenants, no real user data in the repo. Tenant A carries the full 
 | Routing accuracy | scored independently of retrieval quality |
 | p95 latency | tracked from the caching milestone on |
 
-The harness runs both suites against a live API and prints a metrics table with per-question failure diffs. It runs on every PR and fails it on any leak or supersede error — not an afterthought. Recall/MRR join the gate once search exists (milestone 4).
+`run_eval.py` runs both suites against a live API and prints a metrics table with per-question failure diffs. It runs on every PR and fails it on any leak or supersede error — not an afterthought. Recall/MRR join the gate once search exists (milestone 4).
 
 ## How it all fits together (milestones 1–3)
 
 A guided tour of what exists today — the tools, the classes, and the reasoning behind each choice. Everything here is built and tested; anything planned is marked with its milestone.
 
-**In one paragraph:** Mutable is a FastAPI service in front of Postgres. Callers send JSON over HTTP with an `X-Tenant-Id` header; Pydantic validates it; SQLAlchemy turns it into rows in one of three typed tables. Postgres itself — not the Python code — guarantees one tenant can never see another's rows, using Row-Level Security. Preferences are never overwritten: a change closes the old row and links it to the new one, so history stays queryable. An eval harness seeds a fictional user through the API and checks all of this on every pull request.
+**In one paragraph:** Mutable is a FastAPI service in front of Postgres. Callers send JSON over HTTP with an `X-Tenant-Id` header; Pydantic validates it; SQLAlchemy turns it into rows in one of three typed tables. Postgres itself — not the Python code — guarantees one tenant can never see another's rows, using Row-Level Security. Preferences are never overwritten: a change closes the old row and links it to the new one, so history stays queryable. An eval writes a fictional user into the app through the API and checks all of this on every pull request.
 
 ### The big picture
 
@@ -74,7 +74,7 @@ A guided tour of what exists today — the tools, the classes, and the reasoning
 flowchart LR
     subgraph callers["Callers"]
         curl["curl / any HTTP client"]
-        harness["Eval harness<br/>eval/seed.py · eval/harness.py"]
+        evals["Eval<br/>eval/write_data.py · eval/run_eval.py"]
         tests["pytest<br/>TestClient, in-process"]
     end
 
@@ -94,7 +94,7 @@ flowchart LR
     alembic["Alembic<br/>migrations"]
 
     curl -- "HTTP + X-Tenant-Id" --> uvicorn
-    harness -- "HTTP + X-Tenant-Id" --> uvicorn
+    evals -- "HTTP + X-Tenant-Id" --> uvicorn
     tests -- "direct ASGI call" --> fastapi
     orm -- "role memory_engine_app" --> rls
     rls --> tables
@@ -110,16 +110,16 @@ Two paths reach the database, deliberately with different rights: **the API** co
 | **Python 3.12** | Everything | Mature typing (`X \| None`, `Self`), the ecosystem for AI work later | — |
 | **FastAPI** | HTTP layer: routing, request parsing, dependency injection (`Depends`), auto-generated docs at `/docs` | Validation comes free from type hints via Pydantic; `Depends` is how tenant scoping is attached to every request | **Flask**: no built-in validation or DI. **Django**: its ORM and admin are heavier than an API-only service needs |
 | **uvicorn** | The server process that runs the FastAPI app | Standard ASGI server for FastAPI; `--reload` for dev | Gunicorn with uvicorn workers — a deploy-time concern (milestone 6) |
-| **Pydantic** | Three jobs: API request/response shapes (`app/schemas.py`), config from env vars (`pydantic-settings`), validating hand-written eval YAML (`eval/dataset.py`) | One way to say "this data must look like this" everywhere, with clear errors | marshmallow; hand-rolled checks. **SQLModel** would merge Pydantic and SQLAlchemy classes — kept separate so the API contract and the table layout can differ (e.g. `supersedes` is input-only) |
+| **Pydantic** | Three jobs: API request/response shapes (`app/schemas.py`), config from env vars (`pydantic-settings`), validating hand-written eval YAML (`eval/read_data.py`) | One way to say "this data must look like this" everywhere, with clear errors | marshmallow; hand-rolled checks. **SQLModel** would merge Pydantic and SQLAlchemy classes — kept separate so the API contract and the table layout can differ (e.g. `supersedes` is input-only) |
 | **SQLAlchemy 2.0** | ORM: Python classes ↔ tables (`app/models.py`), sessions, transactions | Typed `Mapped[...]` models; Alembic reads them to generate migrations | Raw SQL via psycopg: more control, but every query hand-written and no autogenerate |
 | **psycopg 3** | The Postgres driver SQLAlchemy talks through | Current-generation driver | psycopg2 (older), asyncpg (async-only) |
 | **PostgreSQL 16** | Storage, constraints, **Row-Level Security** | RLS makes isolation a database guarantee; CHECK constraints guard value ranges | A separate vector DB (Pinecone, Qdrant) would need its own, second isolation mechanism |
 | **pgvector** | Extension enabled since migration `0001`; no vector column yet | Embeddings (milestone 4) live in the same rows, under the same RLS | See above |
 | **Alembic** | Versioned schema migrations (`migrations/versions/`) | Creates tables *and* things an ORM can't express: roles, grants, RLS policies | `Base.metadata.create_all()`: no history, no upgrades, no roles/policies |
 | **Docker + Compose** | `db` (pgvector image, healthcheck, persistent volume) and `api` (built from `Dockerfile`, code mounted for live reload) | Same Postgres + pgvector for everyone, one command to start; milestone 6 deploys this same file | Local installs — "works on my machine" drift |
-| **pytest + TestClient** | 64 tests calling the app in-process against the **real** Postgres | Tests exercise the real RLS and constraints | SQLite or mocks would be faster but have no RLS or pgvector — they'd test a different system |
-| **httpx** | HTTP client for the eval seed loader and harness | Same client type as `TestClient`, so one function works for tests *and* the live API | requests (no shared interface with TestClient) |
-| **PyYAML** | Reads the eval dataset files | Hand-authored data needs comments and little punctuation | JSON (no comments); Python literals (data buried in code) |
+| **pytest + TestClient** | 74 tests calling the app in-process against the **real** Postgres | Tests exercise the real RLS and constraints | SQLite or mocks would be faster but have no RLS or pgvector — they'd test a different system |
+| **httpx** | HTTP client for `eval/write_data.py` and `eval/run_eval.py` | Same client type as `TestClient`, so one function works for tests *and* the live API | requests (no shared interface with TestClient) |
+| **PyYAML** | Reads the eval data files | Hand-authored data needs comments and little punctuation | JSON (no comments); Python literals (data buried in code) |
 | **Ruff** | Lint + formatting | One fast tool replacing flake8/isort/black | Those three separately |
 | **GitHub Actions** | CI on every PR and push to `main` | Lives next to the code; free for this scale | Any CI would do |
 
@@ -181,7 +181,7 @@ flowchart TB
 | Schema per tenant | Each tenant gets its own copy of the tables | Migrations multiply by tenant count; cross-tenant ops get awkward |
 | Database per tenant | Strongest separation | Heavy to operate for many small tenants |
 
-It's proven twice: `tests/test_isolation.py` connects to Postgres *directly* as the API's role and shows each tenant sees only its own rows; the eval harness probes all 128 seeded records as the wrong tenant on every PR.
+It's proven twice: `tests/test_isolation.py` connects to Postgres *directly* as the API's role and shows each tenant sees only its own rows; the eval probes all 128 records it wrote, as the wrong tenant, on every PR.
 
 ### The data model
 
@@ -232,7 +232,7 @@ erDiagram
     }
 ```
 
-**How a preference changes.** Nothing is overwritten. The old row is closed exactly where the new one starts, so at any moment exactly one version is valid. Here is Maya's caffeine preference as stored in the eval dataset:
+**How a preference changes.** Nothing is overwritten. The old row is closed exactly where the new one starts, so at any moment exactly one version is valid. Here is Maya's caffeine preference as stored in the eval data:
 
 ```mermaid
 gantt
@@ -314,7 +314,7 @@ classDiagram
 
 Why two kinds of class per type: the **SQLAlchemy model** is what a row *is*; the **Pydantic schemas** are what callers may *send* and will *get back*. They differ on purpose — a caller can't send an `id` or `tenant_id`, and `supersedes` is an instruction, not a column. `MemoryPreferenceRead` builds itself straight from the ORM object (`from_attributes`).
 
-**The eval (`eval/`), part 1 — what the YAML becomes** (`dataset.py`). Every class here inherits from a small `_Strict` base that makes Pydantic reject unknown fields, so a typo in the YAML fails loudly instead of being silently dropped:
+**The eval (`eval/`), part 1 — what the YAML becomes** (`read_data.py`). Every class here inherits from a small `_Strict` base that makes Pydantic reject unknown fields, so a typo in the YAML fails loudly instead of being silently dropped:
 
 ```mermaid
 classDiagram
@@ -322,7 +322,7 @@ classDiagram
 
     class Persona {
         records
-        questions
+        questions, heldout
         expected_route()
         check_questions()
     }
@@ -330,49 +330,49 @@ classDiagram
         persona name
         check_records()
     }
-    class GoldQuestion {
+    class Question {
         id, question, category
-        gold, must_exclude, as_of
+        expected, must_exclude, as_of
     }
     class _Record {
         <<shared fields>>
         key, content, confidence
         source, valid_from
     }
-    class SeedFact
-    class SeedPreference {
+    class FactRecord
+    class PreferenceRecord {
         strength
         supersedes
     }
-    class SeedEpisode {
+    class EpisodeRecord {
         event_time
         event_time_end
     }
 
     Persona *-- PersonaRecords
-    Persona o-- GoldQuestion
-    PersonaRecords o-- SeedFact : facts
-    PersonaRecords o-- SeedPreference : preferences
-    PersonaRecords o-- SeedEpisode : episodes
-    _Record <|-- SeedFact
-    _Record <|-- SeedPreference
-    _Record <|-- SeedEpisode
+    Persona o-- Question
+    PersonaRecords o-- FactRecord : facts
+    PersonaRecords o-- PreferenceRecord : preferences
+    PersonaRecords o-- EpisodeRecord : episodes
+    _Record <|-- FactRecord
+    _Record <|-- PreferenceRecord
+    _Record <|-- EpisodeRecord
 ```
 
-**Part 2 — what a run produces** (`seed.py`, `harness.py`):
+**Part 2 — what a run produces** (`write_data.py`, `run_eval.py`):
 
 ```mermaid
 classDiagram
     direction LR
 
-    class SeededPersona {
+    class WrittenPersona {
         <<dataclass>>
         tenant_id
         ids: key to UUID
     }
-    class SeededTenant {
+    class EvalTenant {
         <<dataclass>>
-        name, persona, seeded
+        name, persona, written
     }
     class Retrieved {
         <<dataclass>>
@@ -388,27 +388,28 @@ classDiagram
         <<dataclass>>
         isolation_leaks
         supersede_failures
+        results, heldout
         recall, mrr
         passed()
     }
 
-    SeededTenant --> Persona : the dataset
-    SeededTenant --> SeededPersona : what seeding returned
-    Report o-- SeededTenant
+    EvalTenant --> Persona : the data files
+    EvalTenant --> WrittenPersona : what writing returned
+    Report o-- EvalTenant
     Report o-- QuestionResult : one per question
-    QuestionResult --> GoldQuestion : scored against
+    QuestionResult --> Question : scored against
     QuestionResult ..> Retrieved : scored from
 ```
 
-The dividing line: **Pydantic** classes guard data coming *in* from hand-written YAML (typos and bad labels fail loudly); **dataclasses** carry data the code itself produced (seeding results, scores), which needs no validation.
+The dividing line: **Pydantic** classes guard data coming *in* from hand-written YAML (typos and bad labels fail loudly); **dataclasses** carry data the code itself produced (write results, scores), which needs no validation.
 
 ### The eval pipeline
 
 ```mermaid
 flowchart LR
-    yaml["eval/data/maya, eval/data/jonas<br/>records.yaml · questions.yaml ·<br/>heldout.yaml"] --> ds["dataset.py<br/>load_persona()<br/>validate every rule"]
-    ds --> seed["seed.py<br/>seed_persona()<br/>POST each record,<br/>fresh tenant per run"]
-    seed --> ids["key to UUID map"]
+    yaml["eval/data/maya, eval/data/jonas<br/>records.yaml · questions.yaml ·<br/>heldout.yaml"] --> rd["read_data.py<br/>load_persona()<br/>validate every rule"]
+    rd --> wd["write_data.py<br/>write_persona()<br/>POST each record,<br/>fresh tenant per run"]
+    wd --> ids["key to UUID map"]
     ids --> iso["check_isolation<br/>128 records + 6 lists,<br/>as the wrong tenant"]
     ids --> sup["check_supersede<br/>10 links + 20 evolution<br/>questions vs API state"]
     ids --> ret["score_question x 75<br/>+ 20 held-out<br/>Recall@5 · MRR ·<br/>excluded hits · leaks"]
@@ -417,11 +418,11 @@ flowchart LR
 
 | Eval decision | Chosen | Alternative | Why |
 |---|---|---|---|
-| Data source | Two fictional personas, hand-written | Real data; LLM-generated data | No real personal data in the repo; hand-written gold labels are trustworthy |
+| Data source | Two fictional personas, hand-written | Real data; LLM-generated data | No real personal data in the repo; hand-written expected answers are trustworthy |
 | How records get in | Through the public API | Direct SQL inserts | Exercises the same validation, supersede logic, and RLS a real caller hits |
 | Record identity | Stable keys (`maya.pref.diet.v2`) | UUIDs in the files | UUIDs are assigned by the server; keys are readable and stable |
 | Re-runs | A new tenant every run | Wiping the database | Nothing to clean up; runs can't interfere with each other |
-| What retrieval sees | Only the question text | The gold labels | A search that could peek at the answers would score meaninglessly |
+| What retrieval sees | Only the question text | The expected answers | A search that could peek at the answers would score meaninglessly |
 | Guarding against overfitting | 20 held-out questions, written before search existed, reported only as totals | Tuning against every question | Per-question failure diffs invite fixing each miss; the held-out score shows whether the fixes generalize |
 | The second persona | Different content, **same topics** as Maya's questions | Unrelated topics | A leaked record can only show up in results if it would actually rank |
 
@@ -434,13 +435,13 @@ flowchart LR
     lint --> mig["alembic upgrade head"]
     mig --> test["pytest<br/>74 tests"]
     test --> up["start uvicorn"]
-    up --> ev["python -m eval.harness"]
+    up --> ev["python -m eval.run_eval"]
     ev --> gate{"0 leaks and<br/>0 supersede failures?"}
     gate -- yes --> ok["check passes"]
     gate -- no --> bad["check fails"]
 ```
 
-The harness report is also written to the run's summary page, readable from the PR's Checks tab. Recall/MRR are printed but don't fail the check until search exists (milestone 4 turns on `--require-retrieval`).
+The eval report is also written to the run's summary page, readable from the PR's Checks tab. Recall/MRR are printed but don't fail the check until search exists (milestone 4 turns on `--require-retrieval`).
 
 ### Where things live
 
@@ -453,10 +454,10 @@ The harness report is also written to the run's summary page, readable from the 
 | `app/schemas.py` | Pydantic models — the API's request and response shapes |
 | `app/routers/` | One file per memory type: create, list current, get by id, delete |
 | `migrations/versions/` | Seven migrations, in order: pgvector → tenants → facts → preferences → episodes → app role → RLS |
-| `tests/` | API tests per type, the direct-Postgres isolation test, dataset/seed/harness tests |
+| `tests/` | API tests per type, the direct-Postgres isolation test, read_data / write_data / run_eval tests |
 | `eval/personas.md` | Design doc for the two fictional users |
-| `eval/data/` | The dataset: records, gold questions, and held-out questions per persona |
-| `eval/dataset.py` · `seed.py` · `harness.py` | Validate → seed → score |
+| `eval/data/` | The data: records, questions with their expected answers, and held-out questions per persona |
+| `eval/read_data.py` · `write_data.py` · `run_eval.py` | Read and validate the files → write them into the app → score |
 | `Dockerfile` · `docker-compose.yml` | The two containers |
 | `.github/workflows/ci.yml` | The CI pipeline above |
 
@@ -484,14 +485,14 @@ Each milestone ships something runnable and checkable on its own — none depend
 
 **Ships:** the three typed tables (`memory_facts`, `memory_preferences`, `memory_episodes`) with `tenant_id` and RLS policies from the first migration, plus a CRUD API per type with versioning on write.
 
-**Done when:** two tenants are seeded through the API, and a direct Postgres session for one tenant provably cannot read the other's rows.
+**Done when:** two tenants' records are written through the API, and a direct Postgres session for one tenant provably cannot read the other's rows.
 
-### 3. Eval dataset & harness v1 ✅
+### 3. Eval data & eval runner v1 ✅
 **For the user:** before building search, pin down what "remembering correctly" means — above all, that a changed preference is recalled as it is *now*, not as it used to be — and measure it on every change.
 
-**Ships:** a fictional user, Maya (100 records, 75 hand-labeled questions), and an isolation-only second user, Jonas (28 records), seeded through the API; a harness that checks isolation, supersede handling, and retrieval, printing a metrics table with per-question failure diffs. A fifth of the questions target preference evolution: a "current" question must exclude the superseded record, a historical one must still find it.
+**Ships:** a fictional user, Maya (100 records, 75 hand-labeled questions), and an isolation-only second user, Jonas (28 records), written through the API; an eval runner that checks isolation, supersede handling, and retrieval, printing a metrics table with per-question failure diffs. A fifth of the questions target preference evolution: a "current" question must exclude the superseded record, a historical one must still find it.
 
-**Done when:** the harness runs end-to-end and reports zero cross-tenant leaks and correct supersede handling on every preference-evolution question, with Recall/MRR near zero until milestone 4 adds search.
+**Done when:** the eval runs end-to-end and reports zero cross-tenant leaks and correct supersede handling on every preference-evolution question, with Recall/MRR near zero until milestone 4 adds search.
 
 ### 4. Search + routing
 **For the user:** the assistant can *recall*. Before it answers or acts ("book me dinner on Friday"), it asks its memory a plain-language question ("what should I know about Maya's food?") and gets back the right records — pescatarian, shellfish allergy, dislikes cilantro — and never the outdated "vegetarian".
@@ -500,7 +501,7 @@ Each milestone ships something runnable and checkable on its own — none depend
 - `/search`: a question in, ranked records out. Records, not prose — turning them into an answer is milestone 9.
 - Embeddings computed on write, and hybrid search per type: vectors for meaning, full-text for exact words, merged by rank.
 - A rule-based router that picks the record types *and the time scope*: current by default, as of a date ("back in 2023"), or full history ("used to"). Out-of-date versions are filtered out by time, not just ranked lower.
-- The harness calls `/search` instead of its stub, and CI starts failing PRs on the Recall/MRR bars.
+- `run_eval.py` calls `/search` instead of its placeholder, and CI starts failing PRs on the Recall/MRR bars.
 
 **Done when:** Recall@5 ≥ 0.9 / MRR ≥ 0.8 on Maya — including a held-out set of questions never used for tuning — with zero leaks and no superseded version returned when a question asks about now.
 
@@ -509,12 +510,12 @@ Each milestone ships something runnable and checkable on its own — none depend
 
 **Ships:** a Redis-backed embedding cache and hot-query cache, keyed per tenant.
 
-**Done when:** the eval harness shows a measured p95 latency drop with identical Recall/MRR/isolation results — proof the cache is invisible to correctness.
+**Done when:** the eval shows a measured p95 latency drop with identical Recall/MRR/isolation results — proof the cache is invisible to correctness.
 
 ### 6. Deploy + CI/CD
 **For the user:** Mutable is reachable on the internet, and a change that could leak one user's memories to another cannot ship.
 
-**Ships:** the same `docker-compose.yml` from milestone 1, deployed to a single AWS EC2 instance (not ECS/RDS — cheapest option, and the closest match to local dev, at the cost of self-managed Postgres backups instead of RDS's); CI/CD running the full eval harness (isolation gate included) as a required check before deploy.
+**Ships:** the same `docker-compose.yml` from milestone 1, deployed to a single AWS EC2 instance (not ECS/RDS — cheapest option, and the closest match to local dev, at the cost of self-managed Postgres backups instead of RDS's); CI/CD running the full eval (isolation gate included) as a required check before deploy.
 
 **Done when:** there's a live endpoint on a public IP/DNS name, and a PR that breaks tenant scoping gets blocked by a red eval run before it can merge.
 
@@ -551,7 +552,7 @@ Each milestone ships something runnable and checkable on its own — none depend
 
 **Ships:** chunked ingestion for long-form text, likely a new memory type with its own retrieval strategy.
 
-**Done when:** a full document can be ingested and a question against it returns the right chunk, evaluated against its own gold set.
+**Done when:** a full document can be ingested and a question against it returns the right chunk, evaluated against its own questions and expected answers.
 
 ### 12. Autonomous agent behavior
 **For the user:** the assistant acts on what it knows — schedules, reminders, decisions — and can always show which memory led to which action.

@@ -1,12 +1,12 @@
 # Eval personas
 
-Design doc for the eval dataset: who the two personas are and why the data is shaped the way it
+Design doc for the eval data: who the two personas are and why the data is shaped the way it
 is. The records themselves live in `eval/data/<persona>/`. Both personas are entirely fictional
 — no real personal data, per the README's eval contract.
 
 ## Tenant A — Maya Chen
 
-The rich persona: 100 records across facts/preferences/episodes, and all 75 gold questions. 31, grew up in Toronto, moved to Lisbon 2 years ago. Senior Product
+The rich persona: 100 records across facts/preferences/episodes, and all 75 questions. 31, grew up in Toronto, moved to Lisbon 2 years ago. Senior Product
 Designer at a fintech startup ("Nordic Pay"), degree in HCI from University of Toronto.
 
 ### Facts
@@ -61,7 +61,7 @@ Superseded chains (old → new, every version exists, old ones closed out at the
   (2021) → tea over coffee, mostly green tea (November 2024)
 - Reading: physical books (2015) → e-reader (August 2024, left her books behind when moving)
 
-Each chain is seeded with backdated `valid_from` values, so the old record's `valid_to` lands on
+Each chain is written with backdated `valid_from` values, so the old record's `valid_to` lands on
 the new one's `valid_from` and point-in-time questions ("was she vegetarian in 2023?") have a
 single correct answer.
 
@@ -102,23 +102,23 @@ Toronto visits, two talks, two trips with Sam); and multi-day events via `event_
   exam (June); Toronto for her dad's 65th (July); Biscuit's dental cleaning (Aug); talk at a
   Lisbon design meetup (Sept)
 
-### Gold questions
+### Questions
 75 questions in `eval/data/maya/questions.yaml`, weighted toward the product's differentiator:
 
 | Category | Count | What it checks |
 |---|---|---|
 | `preference_current` | 10 | Latest version of a chain, every older version in `must_exclude` |
 | `preference_historical` | 10 | An older version still retrievable; 7 pinned to an `as_of` date |
-| `fact` | 24 | Point lookups, several with two gold records (both allergies, both languages) |
+| `fact` | 24 | Point lookups, several expecting two records (both allergies, both languages) |
 | `preference` | 13 | Stable preferences, including near-neighbors (communication vs async updates) |
 | `episode` | 12 | Date lookups, "most recent" (last Toronto visit), multi-record (all talks) |
 | `cross_type` | 6 | "Why" questions pairing a preference change with the episode that caused it |
 
-81 of the 100 records are gold for some question; the other 19 are distractors.
+81 of the 100 records are an expected answer to some question; the other 19 are distractors.
 
 ### Held-out questions
 20 more in `eval/data/maya/heldout.yaml`, ids `h001`–`h020`, the same category mix scaled down
-(3 / 3 / 6 / 3 / 3 / 2). They're never used for tuning: the harness scores them like the main
+(3 / 3 / 6 / 3 / 3 / 2). They're never used for tuning: `run_eval.py` scores them like the main
 set but reports only their totals, never question by question, and `--require-retrieval` holds
 them to the same bars. They show the main set's scores weren't reached by overfitting those 75
 questions.
@@ -136,7 +136,7 @@ Written before any search code existed, and built to generalize rather than repe
 
 ## Tenant B — Jonas Weber
 
-The light persona: 28 records, isolation probes only, no gold questions. His *content* is
+The light persona: 28 records, isolation probes only, no questions. His *content* is
 unrelated to Maya's in every dimension — different city, job, age, life details — so a leak
 would be obviously wrong in the eval report, not a subtle near-miss. But his records cover the
 *same topics* Maya's questions ask about (where someone lives, their job, allergies, pets,
