@@ -1,0 +1,128 @@
+# Held-out questions for Maya: same format and rules as questions.yaml, but never used for
+# tuning. The harness scores them separately and reports totals only -- no per-question
+# diffs -- so search can't be fitted to them. Their job is to show the main set's scores
+# weren't reached by overfitting those 75 questions.
+#
+# Written before any search code existed. Same category mix as the main set, scaled to 20.
+# Nine target records the main set never asks about; the rest reach known records from a
+# new angle. Ids are h-numbered; append, don't renumber.
+
+# --- Preference evolution: current (older versions must not surface) -------------------
+# No "now" or "still" in the wording: current has to be the default, not a keyword match.
+
+- id: h001
+  question: I'm making salmon for dinner -- will Maya eat it?
+  category: preference_current
+  gold: [maya.pref.diet.v2]
+  must_exclude: [maya.pref.diet.v1]
+
+- id: h002
+  question: Would Maya take a hybrid job that's three days a week in the office?
+  category: preference_current
+  gold: [maya.pref.work_location.v2]
+  must_exclude: [maya.pref.work_location.v1]
+
+- id: h003
+  question: Should I get Maya a Kindle or a hardcover for her birthday?
+  category: preference_current
+  gold: [maya.pref.reading.v2]
+  must_exclude: [maya.pref.reading.v1]
+
+# --- Preference evolution: historical (an older version must still be found) ------------
+
+- id: h004
+  question: What design software was Maya using in 2018?
+  category: preference_historical
+  gold: [maya.pref.design_tool.v1]
+  must_exclude: [maya.pref.design_tool.v2]
+  as_of: 2018-06-01
+
+- id: h005
+  question: How did Maya like to travel in 2021?
+  category: preference_historical
+  gold: [maya.pref.travel_style.v1]
+  must_exclude: [maya.pref.travel_style.v2]
+  as_of: 2021-06-01
+
+- id: h006
+  question: How have Maya's coffee and tea habits changed over the years?
+  category: preference_historical
+  gold: [maya.pref.caffeine.v1, maya.pref.caffeine.v2, maya.pref.caffeine.v3]
+
+# --- Facts ------------------------------------------------------------------------------
+
+- id: h007
+  question: What passport does Maya hold?
+  category: fact
+  gold: [maya.fact.citizenship]
+
+- id: h008
+  question: Does Maya volunteer anywhere?
+  category: fact
+  gold: [maya.fact.volunteering]
+
+- id: h009
+  question: Can Maya drive us to the airport?
+  category: fact
+  gold: [maya.fact.no_car]
+
+- id: h010
+  question: Where is Nordic Pay based?
+  category: fact
+  gold: [maya.fact.nordic_pay]
+
+- id: h011
+  question: How old is Maya?
+  category: fact
+  gold: [maya.fact.birthday]
+
+- id: h012
+  question: What does Maya's brother do for work?
+  category: fact
+  gold: [maya.fact.brother]
+
+# --- Stable preferences -----------------------------------------------------------------
+
+- id: h013
+  question: Should I set up Maya's new laptop with a light or a dark theme?
+  category: preference
+  gold: [maya.pref.dark_mode]
+
+- id: h014
+  question: If I message Maya on Slack, will her phone notify her?
+  category: preference
+  gold: [maya.pref.notifications]
+
+- id: h015
+  question: Should I leave the coriander out of Maya's food?
+  category: preference
+  gold: [maya.pref.cilantro]
+
+# --- Episodes ---------------------------------------------------------------------------
+
+- id: h016
+  question: When did the onboarding redesign Maya led go live?
+  category: episode
+  gold: [maya.ep.onboarding_launch]
+
+- id: h017
+  question: What did Maya do in December 2025?
+  category: episode
+  gold: [maya.ep.toronto_holidays]
+
+- id: h018
+  question: How did Maya celebrate turning 31?
+  category: episode
+  gold: [maya.ep.birthday_31]
+
+# --- Cross-type -------------------------------------------------------------------------
+
+- id: h019
+  question: How long have Maya and Sam been together, and how did they meet?
+  category: cross_type
+  gold: [maya.fact.partner, maya.ep.met_sam]
+
+- id: h020
+  question: When did Maya start learning Portuguese, and how far has she got?
+  category: cross_type
+  gold: [maya.ep.portuguese_lessons, maya.fact.learning_portuguese]

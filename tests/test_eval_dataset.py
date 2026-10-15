@@ -52,6 +52,15 @@ BASE = {
             "as_of": "2023-06-01",
         },
     ],
+    "heldout": [
+        {
+            "id": "h001",
+            "question": "does she eat fish?",
+            "category": "preference_current",
+            "gold": ["t.pref.diet.v2"],
+            "must_exclude": ["t.pref.diet.v1"],
+        },
+    ],
 }
 
 
@@ -69,7 +78,15 @@ def test_shipped_seed_data_validates(name: str) -> None:
 
 
 def test_isolation_persona_has_no_questions() -> None:
-    assert load_persona("jonas").questions == []
+    jonas = load_persona("jonas")
+    assert jonas.questions == [] and jonas.heldout == []
+
+
+def test_maya_heldout_mirrors_the_main_category_mix() -> None:
+    maya = load_persona("maya")
+    assert len(maya.heldout) == 20
+    main = {q.category for q in maya.questions}
+    assert {q.category for q in maya.heldout} == main
 
 
 def test_valid_base_and_date_normalization() -> None:
@@ -119,6 +136,14 @@ def _set(path, value):
         _set(["questions", 0, "must_exclude"], ["t.pref.diet.v1", "t.pref.diet.v2"]),
         # duplicate question id
         _set(["questions", 1, "id"], "q001"),
+        # held-out ids are h-numbered, main ids q-numbered
+        _set(["heldout", 0, "id"], "q003"),
+        _set(["questions", 1, "id"], "h002"),
+        # a held-out question that repeats a main one isn't held out
+        _set(["heldout", 0, "question"], "current diet?"),
+        # held-out questions follow the same rules as the main set
+        _set(["heldout", 0, "must_exclude"], []),
+        _set(["heldout", 0, "gold"], ["t.fact.nope"]),
     ],
 )
 def test_invalid_seed_data_rejected(mutate) -> None:

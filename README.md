@@ -51,7 +51,7 @@ No Documents type — long-form text needs chunking, a different retrieval probl
 
 ## Eval contract
 
-Two synthetic tenants, no real user data in the repo. Tenant A carries the full seed set (100 records, 75 labeled questions) for retrieval quality. Tenant B is a minimal second tenant that exists only to probe isolation.
+Two synthetic tenants, no real user data in the repo. Tenant A carries the full seed set (100 records, 75 labeled questions) for retrieval quality, plus 20 held-out questions that are scored the same way but reported only as totals, so search is never tuned against them. Tenant B is a minimal second tenant that exists only to probe isolation.
 
 | Metric | Bar |
 |---|---|
@@ -406,12 +406,12 @@ The dividing line: **Pydantic** classes guard data coming *in* from hand-written
 
 ```mermaid
 flowchart LR
-    yaml["eval/data/maya, eval/data/jonas<br/>records.yaml · questions.yaml"] --> ds["dataset.py<br/>load_persona()<br/>validate every rule"]
+    yaml["eval/data/maya, eval/data/jonas<br/>records.yaml · questions.yaml ·<br/>heldout.yaml"] --> ds["dataset.py<br/>load_persona()<br/>validate every rule"]
     ds --> seed["seed.py<br/>seed_persona()<br/>POST each record,<br/>fresh tenant per run"]
     seed --> ids["key to UUID map"]
     ids --> iso["check_isolation<br/>128 records + 6 lists,<br/>as the wrong tenant"]
     ids --> sup["check_supersede<br/>10 links + 20 evolution<br/>questions vs API state"]
-    ids --> ret["score_question x 75<br/>Recall@5 · MRR ·<br/>excluded hits · leaks"]
+    ids --> ret["score_question x 75<br/>+ 20 held-out<br/>Recall@5 · MRR ·<br/>excluded hits · leaks"]
     iso & sup & ret --> rep["Report<br/>metrics table + diffs<br/>exit 0 or 1"]
 ```
 
@@ -422,6 +422,7 @@ flowchart LR
 | Record identity | Stable keys (`maya.pref.diet.v2`) | UUIDs in the files | UUIDs are assigned by the server; keys are readable and stable |
 | Re-runs | A new tenant every run | Wiping the database | Nothing to clean up; runs can't interfere with each other |
 | What retrieval sees | Only the question text | The gold labels | A search that could peek at the answers would score meaninglessly |
+| Guarding against overfitting | 20 held-out questions, written before search existed, reported only as totals | Tuning against every question | Per-question failure diffs invite fixing each miss; the held-out score shows whether the fixes generalize |
 | The second persona | Different content, **same topics** as Maya's questions | Unrelated topics | A leaked record can only show up in results if it would actually rank |
 
 ### CI: what runs on every pull request
@@ -431,7 +432,7 @@ flowchart LR
     trig["PR opened or updated,<br/>or push to main"] --> setup["Postgres service container<br/>+ Python 3.12 + deps"]
     setup --> lint["ruff check"]
     lint --> mig["alembic upgrade head"]
-    mig --> test["pytest<br/>64 tests"]
+    mig --> test["pytest<br/>74 tests"]
     test --> up["start uvicorn"]
     up --> ev["python -m eval.harness"]
     ev --> gate{"0 leaks and<br/>0 supersede failures?"}
@@ -454,7 +455,7 @@ The harness report is also written to the run's summary page, readable from the 
 | `migrations/versions/` | Seven migrations, in order: pgvector → tenants → facts → preferences → episodes → app role → RLS |
 | `tests/` | API tests per type, the direct-Postgres isolation test, dataset/seed/harness tests |
 | `eval/personas.md` | Design doc for the two fictional users |
-| `eval/data/` | The dataset: records and gold questions per persona |
+| `eval/data/` | The dataset: records, gold questions, and held-out questions per persona |
 | `eval/dataset.py` · `seed.py` · `harness.py` | Validate → seed → score |
 | `Dockerfile` · `docker-compose.yml` | The two containers |
 | `.github/workflows/ci.yml` | The CI pipeline above |
