@@ -28,6 +28,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://mutable_app:mutable_app@localhost:5432/mutable
       ADMIN_DATABASE_URL: postgresql+psycopg://mutable:mutable@localhost:5432/mutable
+      # Where fastembed keeps the embedding model; the cache step below saves this folder.
+      FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +43,19 @@ jobs:
 
       - name: Lint
         run: ruff check .
+
+      # The embedding model is downloaded once and then restored from the cache on later
+      # runs. The key names the model: change it when app/embeddings.py's MODEL_NAME changes.
+      - name: Restore the embedding model
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FASTEMBED_CACHE_PATH }}
+          key: fastembed-BAAI-bge-small-en-v1.5
+
+      # Loads the model, downloading it only if the cache didn't have it, so the tests
+      # never wait on (or fail over) a download.
+      - name: Download the embedding model
+        run: python -c "from app.embeddings import LocalEmbedder; LocalEmbedder()"
 
       - name: Run migrations
         run: alembic upgrade head

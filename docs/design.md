@@ -154,6 +154,7 @@ Three details make this safe:
 |---|---|---|---|
 | Isolating users | Postgres Row-Level Security | `WHERE tenant_id = …` in code; a schema or database per user | One forgotten filter leaks data. Per-user schemas multiply every migration. |
 | Where vectors live | pgvector, inside Postgres | A separate vector database | One isolation mechanism instead of two |
+| Embedding model | A small local model (`BAAI/bge-small-en-v1.5`, run by fastembed) | An embeddings API | No API key, no cost per call, and memories never leave the server to be embedded |
 | Table layout | Three typed tables | One table with a JSON payload | Real columns and constraints for each type |
 | History | `valid_from` / `valid_to` + `superseded_by` | Overwriting; a separate audit log | "What did she use to…" is an ordinary query |
 | Input | Structured JSON only, for now | Free text read by an LLM | Writes stay predictable and auditable. Free text is milestone 8 (see [gap 4.2](#42-updating-memory-reliably-and-the-llm-problem)) |
@@ -166,6 +167,7 @@ Three details make this safe:
 | **FastAPI + Pydantic** | The HTTP API. Requests are checked against typed schemas, and the tenant is attached to every request. |
 | **PostgreSQL 16** | Storage, constraints, Row-Level Security |
 | **pgvector** | Vector search inside Postgres, used from milestone 4 |
+| **fastembed** | Runs the embedding model on the API's own CPU, for search (milestone 4) |
 | **SQLAlchemy + Alembic** | Tables as Python classes; numbered migrations `0001`–`0007` |
 | **Docker Compose** | The same database and API for every developer; milestone 6 deploys this same setup |
 | **pytest** | Tests run against a real Postgres, so the real isolation rules get tested |
@@ -212,7 +214,7 @@ Each milestone ships something that runs and can be checked on its own.
 | # | Step | |
 |---|---|---|
 | 1 | Held-out questions: 20 more, never used for tuning | ✅ |
-| 2 | Embedding model behind one interface, plus a predictable fake for tests | |
+| 2 | Embedding model behind one interface, plus a predictable fake for tests | ✅ |
 | 3 | Store each record's vector and full-text index when it's written | |
 | 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | |
 | 5 | Hybrid search: add full-text, merge both rankings | |
@@ -418,7 +420,7 @@ Memories include health details (allergies), relationships and locations. Isolat
 - a log of who read what
 - a retention policy
 
-**Milestones 8 and 9 would send personal text to an LLM provider.** That needs a provider that doesn't train on the data or keep it, and only the minimum text should be sent.
+**Milestones 8 and 9 would send personal text to an LLM provider.** That needs a provider that doesn't train on the data or keep it, and only the minimum text should be sent. Search doesn't: its embedding model runs on the server itself.
 
 ### 4.9 Search is not built yet
 
@@ -481,6 +483,7 @@ mutable/
 │   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
 │   ├── models.py                 SQLAlchemy table classes
 │   ├── schemas.py                Pydantic request and response classes
+│   ├── embeddings.py             turns text into vectors: the real model, and a fake for tests
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -502,7 +505,7 @@ mutable/
 │   └── run_eval.py               runs steps 1–4; the command-line entry point
 ├── tests/
 │   ├── conftest.py               shared fixtures: client, tenant, other_tenant
-│   └── test_*.py                 API, isolation, transaction and eval tests
+│   └── test_*.py                 API, isolation, transaction, embedding and eval tests
 ├── docs/design.md                this document
 ├── Dockerfile · docker-compose.yml
 ├── alembic.ini · pyproject.toml · requirements.txt · requirements-dev.txt · .env.example
@@ -522,6 +525,9 @@ flowchart TB
         fastapi["FastAPI<br/>on Starlette"] --> pydantic["Pydantic<br/>request checking"]
         settings["pydantic-settings<br/>configuration"]
     end
+    subgraph embed["Embeddings"]
+        fastembed["fastembed<br/>runs the model"] --> onnx["ONNX Runtime"]
+    end
     subgraph data["Data access"]
         sqlalchemy["SQLAlchemy 2"] --> psycopg["psycopg 3<br/>driver"]
     end
@@ -539,30 +545,33 @@ flowchart TB
 
     uvicorn --> fastapi
     fastapi --> sqlalchemy
+    fastapi --> fastembed
     psycopg --> postgres
     alembic --> sqlalchemy
 ```
 
 | Library | Tested with | Required | Used in | What it does here |
 |---|---|---|---|---|
-| **FastAPI** | 0.141 | ≥ 0.115 | `app/` | Routing, request parsing, dependencies (`Depends`), API docs at `/docs` |
-| **Starlette** | 1.7 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
+| **FastAPI** | 0.143 | ≥ 0.115 | `app/` | Routing, request parsing, dependencies (`Depends`), API docs at `/docs` |
+| **Starlette** | 1.8 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
 | **uvicorn** | 0.54 | ≥ 0.32 | Dockerfile, CI | The web server that runs the app |
-| **Pydantic** | 2.13 | via FastAPI | `app/schemas.py`, `eval/read_data.py` | Data checking from type hints |
-| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
+| **Pydantic** | 2.14 | via FastAPI | `app/schemas.py`, `eval/read_data.py` | Data checking from type hints |
+| **pydantic-settings** | 2.16 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
 | **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
 | **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
 | **Alembic** | 1.20 | ≥ 1.13 | `migrations/` | Numbered schema migrations |
 | **pgvector** (Python) | 0.5 | ≥ 0.3 | not imported yet | Vector column types for SQLAlchemy; used from milestone 4 |
+| **fastembed** | 0.9 | ≥ 0.9 | `app/embeddings.py`, Dockerfile, CI | Downloads the embedding model once, then runs it on the CPU (through ONNX Runtime) |
 | **httpx** | 0.28 | ≥ 0.27, dev | `eval/`, `tests/` | HTTP client; same interface as `TestClient`, so eval code runs against both |
 | **PyYAML** | 6.0 | ≥ 6.0, dev | `eval/read_data.py` | Reads the eval's YAML files (`safe_load`) |
 | **pytest** | 9.1 | ≥ 8.3, dev | `tests/` | Test runner, fixtures, `monkeypatch` |
-| **Ruff** | 0.16 | ≥ 0.7, dev | CI | Lint and formatting |
+| **Ruff** | 0.17 | ≥ 0.7, dev | CI | Lint and formatting |
 
 The platform:
 
 - **Python:** 3.12 (`python:3.12-slim` image)
 - **Database:** PostgreSQL 16 (`pgvector/pgvector:pg16` image), with the pgvector extension, 0.8 when tested
+- **Embedding model:** `BAAI/bge-small-en-v1.5`, 384 numbers per vector, run by fastembed
 - **Containers:** Docker Compose
 - **CI:** GitHub Actions
 
@@ -583,6 +592,8 @@ flowchart LR
     env["migrations/env.py"] --> config
     env --> models
 ```
+
+`embeddings.py` isn't in the picture yet: it imports none of these, and none of them import it until step 3.
 
 **The eval, from the entry point down to the data files:**
 
@@ -823,6 +834,36 @@ classDiagram
 - **`*Read` classes are what comes back.** `from_attributes` lets them build straight from a table row.
 - **An omitted `valid_from` falls through to the database default (now).** Endpoints drop empty fields before inserting (`exclude_none`).
 - **`supersedes` is an instruction, not a column.** It's removed before the insert and acted on separately.
+
+#### Turning text into vectors: `embeddings.py`
+
+An **embedding** is a text turned into a vector: a fixed-length list of numbers. Texts that mean similar things get vectors that are close together, so search can find "prefers tea over coffee" for a question about drinks even when the words differ.
+
+```mermaid
+flowchart TB
+    iface["Embedder: the interface<br/>dimension · embed(texts) → one vector per text"]
+    local["LocalEmbedder<br/>the real model, BAAI/bge-small-en-v1.5<br/>understands meaning"]
+    fake["FakeEmbedder<br/>one position per word<br/>instant and predictable"]
+    app["the app<br/>Depends(get_embedder)"]
+    tests["tests"]
+
+    local -. implements .-> iface
+    fake -. implements .-> iface
+    app -- "one shared instance" --> local
+    tests -- "swapped in through<br/>app.dependency_overrides" --> fake
+```
+
+| Name | What it is |
+|---|---|
+| `MODEL_NAME`, `DIMENSION` | `BAAI/bge-small-en-v1.5` and 384. Every vector has 384 numbers, and the database column will be sized to match, so changing the model means a migration and embedding every record again. That's why the model is a constant, not a setting |
+| `Embedder` | The interface, a `typing.Protocol`: a `dimension`, and `embed(texts)`, which returns one vector per text, in order. Code that needs vectors depends on this, not on either class |
+| `LocalEmbedder` | The real one: the model, run on the CPU by fastembed. Related texts get close vectors even when they share no words. Vectors come back scaled to length 1 |
+| `FakeEmbedder` | For tests. Each word adds 1 to one of the 384 numbers, picked by a checksum of the word (`zlib.crc32`), and the vector is then scaled to length 1. So the same text gets the same vector in every run, and texts that share words get closer vectors. It knows nothing about meaning |
+| `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a moment, so it's never done per request |
+
+No endpoint uses the embedder yet. Step 3 embeds each record as it's written, and from then on the tests swap in `FakeEmbedder`, so they stay fast and predictable.
+
+**Where the model comes from.** fastembed downloads the model (about 65 MB) from Hugging Face the first time it's loaded, into the folder named by the `FASTEMBED_CACHE_PATH` environment variable (fastembed's own setting), and after that reads it from disk with no network. The Docker image downloads it at build time, and CI keeps it in a cache between runs ([5.8](#58-running-it-containers-configuration-and-ci)). Anywhere else, the first use downloads it to a temporary folder.
 
 ### 5.5 The database (`migrations/`)
 
@@ -1090,6 +1131,7 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
+| `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
 | `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
 | `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check |
@@ -1101,7 +1143,7 @@ flowchart LR
     dev["developer machine"] -- "localhost:8000" --> api
     dev -- "localhost:5432" --> db
     subgraph compose["docker compose"]
-        api["api<br/>python:3.12-slim<br/>uvicorn --reload<br/>code mounted at /app"]
+        api["api<br/>python:3.12-slim<br/>uvicorn --reload<br/>code mounted at /app<br/>embedding model in /opt/fastembed"]
         db["db<br/>pgvector/pgvector:pg16<br/>health check: pg_isready"]
         vol[("volume: pgdata")]
     end
@@ -1111,7 +1153,7 @@ flowchart LR
 
 | File | What it sets |
 |---|---|
-| `Dockerfile` | `python:3.12-slim`; installs `requirements-dev.txt`; runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
+| `Dockerfile` | `python:3.12-slim`; installs `requirements-dev.txt`; downloads the embedding model into `/opt/fastembed` and points `FASTEMBED_CACHE_PATH` there (outside `/app`, because compose mounts the repo over `/app` and would hide it); runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
 | `docker-compose.yml` | **db:** user, password and database `mutable`; port 5432; a health check every 5 seconds; data kept in the `pgdata` volume. **api:** both database URLs pointing at host `db`; port 8000; starts only once the db is healthy; mounts the repo at `/app` for live reload |
 | `.env.example` | The same two URLs pointing at `localhost`, for running outside Docker. Copy it to `.env` |
 | `pyproject.toml` | **Ruff:** 100-character lines, Python 3.12, rule sets E, F, I and UP. **pytest:** the `tests/` folder, with the project root on the import path |
@@ -1125,7 +1167,8 @@ flowchart LR
     trig["pull request,<br/>or push to main"] --> pg["Postgres service<br/>pgvector:pg16"]
     pg --> py["Python 3.12,<br/>install requirements-dev"]
     py --> lint["ruff check"]
-    lint --> mig["alembic upgrade head"]
+    lint --> model["embedding model:<br/>restore from the cache,<br/>download on a miss"]
+    model --> mig["alembic upgrade head"]
     mig --> test["pytest"]
     test --> up["start uvicorn,<br/>wait for /health"]
     up --> ev["python -m eval.run_eval<br/>report → job summary"]
@@ -1133,3 +1176,5 @@ flowchart LR
     gate -- yes --> pass["check passes"]
     gate -- no --> fail["check fails;<br/>print the API log"]
 ```
+
+CI installs everything on the runner directly, not in Docker, so it keeps the embedding model in its own cache (`actions/cache`): the folder `FASTEMBED_CACHE_PATH` names, under a key that names the model. Loading the model before the tests means they never wait on a download; it downloads only when the cache is empty, such as after the key changes.
