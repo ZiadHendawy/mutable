@@ -1,6 +1,7 @@
-"""Eval harness: seed every persona, then score isolation, supersede handling, and retrieval.
+"""Run the eval: write every persona into the API, then score isolation, supersede handling,
+and retrieval.
 
-    python -m eval.harness [--base-url http://localhost:8000] [--require-retrieval]
+    python -m eval.run_eval [--base-url http://localhost:8000] [--require-retrieval]
 
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
 metrics are reported against the README's bars but only gate the run with
@@ -20,8 +21,8 @@ from datetime import datetime
 
 import httpx
 
-from eval.dataset import GoldQuestion, Persona, RecordType, load_persona
-from eval.seed import SeededPersona, seed_persona
+from eval.read_data import Persona, Question, RecordType, load_persona
+from eval.write_data import WrittenPersona, write_persona
 
 PERSONAS = ["maya", "jonas"]
 PATHS: dict[RecordType, str] = {
@@ -40,7 +41,7 @@ class Retrieved:
 
 
 # (client, tenant id, question text) -> ranked results. Gets only what a real caller has --
-# the question text -- never the gold labels.
+# the question text -- never the expected answers.
 Retriever = Callable[[httpx.Client, uuid.UUID, str], Retrieved]
 
 
@@ -50,25 +51,25 @@ def no_search(client: httpx.Client, tenant_id: uuid.UUID, question: str) -> Retr
 
 
 @dataclass
-class SeededTenant:
+class EvalTenant:
     name: str
     persona: Persona
-    seeded: SeededPersona
+    written: WrittenPersona
 
     @property
     def key_of(self) -> dict[uuid.UUID, str]:
-        return {id_: key for key, id_ in self.seeded.ids.items()}
+        return {id_: key for key, id_ in self.written.ids.items()}
 
     @property
     def headers(self) -> dict[str, str]:
-        return {"X-Tenant-Id": str(self.seeded.tenant_id)}
+        return {"X-Tenant-Id": str(self.written.tenant_id)}
 
 
-def seed_all(client: httpx.Client, names: list[str] = PERSONAS) -> list[SeededTenant]:
+def write_all(client: httpx.Client, names: list[str] = PERSONAS) -> list[EvalTenant]:
     # Load (and so validate) everything before writing anything.
     personas = {name: load_persona(name) for name in names}
     return [
-        SeededTenant(name, persona, seed_persona(client, persona.records))
+        EvalTenant(name, persona, write_persona(client, persona.records))
         for name, persona in personas.items()
     ]
 
@@ -76,7 +77,7 @@ def seed_all(client: httpx.Client, names: list[str] = PERSONAS) -> list[SeededTe
 # --- Isolation --------------------------------------------------------------------------
 
 
-def check_isolation(client: httpx.Client, tenants: list[SeededTenant]) -> tuple[list[str], int]:
+def check_isolation(client: httpx.Client, tenants: list[EvalTenant]) -> tuple[list[str], int]:
     """Every record, fetched by id and via every list endpoint, as every *other* tenant.
 
     Returns (leaks, number of probes made).
@@ -88,7 +89,7 @@ def check_isolation(client: httpx.Client, tenants: list[SeededTenant]) -> tuple[
         for other in tenants:
             if other is owner:
                 continue
-            for key, id_ in owner.seeded.ids.items():
+            for key, id_ in owner.written.ids.items():
                 path = PATHS[owner.persona.records.record_type(key)]
                 status = client.get(f"{path}/{id_}", headers=other.headers).status_code
                 probes += 1
@@ -107,11 +108,11 @@ def check_isolation(client: httpx.Client, tenants: list[SeededTenant]) -> tuple[
 # --- Supersede handling -----------------------------------------------------------------
 
 
-def check_supersede(client: httpx.Client, tenant: SeededTenant) -> list[str]:
-    """Checks the API's actual state, not the dataset: every chain is linked and tiles in
-    time, and every preference-evolution question's gold/must_exclude agrees with it."""
+def check_supersede(client: httpx.Client, tenant: EvalTenant) -> list[str]:
+    """Checks the API's actual state, not the data files: every chain is linked and tiles in
+    time, and every preference-evolution question's expected/must_exclude agrees with it."""
     records = tenant.persona.records
-    ids = tenant.seeded.ids
+    ids = tenant.written.ids
     rows = {
         p.key: client.get(f"/preferences/{ids[p.key]}", headers=tenant.headers).json()
         for p in records.preferences
@@ -138,18 +139,20 @@ def check_supersede(client: httpx.Client, tenant: SeededTenant) -> list[str]:
             failures.append(f"{key} is superseded but still listed as current")
 
     for q in _evolution_questions(tenant.persona):
-        gold = [k for k in q.gold if k in rows]
+        expected = [k for k in q.expected if k in rows]
         excluded = [k for k in q.must_exclude if k in rows]
         if q.category == "preference_current":
-            failures += [f"{q.id}: gold {k} is not current" for k in gold if ids[k] not in current]
+            failures += [
+                f"{q.id}: expected {k} is not current" for k in expected if ids[k] not in current
+            ]
             failures += [
                 f"{q.id}: excluded {k} is still current" for k in excluded if ids[k] in current
             ]
         if q.as_of is not None:
             when = q.as_of.date()
             failures += [
-                f"{q.id}: gold {k} was not valid on {when}"
-                for k in gold
+                f"{q.id}: expected {k} was not valid on {when}"
+                for k in expected
                 if not _valid_at(rows[k], q.as_of)
             ]
             failures += [
@@ -160,7 +163,7 @@ def check_supersede(client: httpx.Client, tenant: SeededTenant) -> list[str]:
     return [f"{tenant.name}: {f}" for f in failures]
 
 
-def _evolution_questions(persona: Persona) -> list[GoldQuestion]:
+def _evolution_questions(persona: Persona) -> list[Question]:
     return [
         q
         for q in persona.questions
@@ -183,8 +186,8 @@ def _valid_at(row: dict, when: datetime) -> bool:
 
 @dataclass
 class QuestionResult:
-    question: GoldQuestion
-    missing: list[str]  # gold keys not in the top k
+    question: Question
+    missing: list[str]  # expected keys not in the top k
     excluded_hits: list[str]  # must_exclude keys that made the top k
     leaked: list[str]  # top-k results that belong to another tenant
     reciprocal_rank: float
@@ -192,8 +195,8 @@ class QuestionResult:
 
     @property
     def recall(self) -> float:
-        gold = self.question.gold
-        return (len(gold) - len(self.missing)) / len(gold)
+        expected = self.question.expected
+        return (len(expected) - len(self.missing)) / len(expected)
 
     @property
     def passed(self) -> bool:
@@ -201,10 +204,10 @@ class QuestionResult:
 
 
 def score_question(
-    question: GoldQuestion,
+    question: Question,
     retrieved: Retrieved,
-    tenant: SeededTenant,
-    others: list[SeededTenant],
+    tenant: EvalTenant,
+    others: list[EvalTenant],
     k: int,
 ) -> QuestionResult:
     own = tenant.key_of
@@ -218,13 +221,13 @@ def score_question(
         owner = next((o for o in others if id_ in o.key_of), None)
         leaked.append(owner.key_of[id_] if owner else f"id {id_} from another tenant")
 
-    rank = next((i for i, key in enumerate(top_keys, 1) if key in question.gold), None)
+    rank = next((i for i, key in enumerate(top_keys, 1) if key in question.expected), None)
     route_ok = None
     if retrieved.route is not None:
         route_ok = retrieved.route == tenant.persona.expected_route(question)
     return QuestionResult(
         question=question,
-        missing=[key for key in question.gold if key not in top_keys],
+        missing=[key for key in question.expected if key not in top_keys],
         excluded_hits=[key for key in question.must_exclude if key in top_keys],
         leaked=leaked,
         reciprocal_rank=1 / rank if rank else 0.0,
@@ -237,7 +240,7 @@ def score_question(
 
 @dataclass
 class Report:
-    tenants: list[SeededTenant]
+    tenants: list[EvalTenant]
     retriever: str
     k: int
     isolation_leaks: list[str]
@@ -285,7 +288,7 @@ class Report:
 
 def evaluate(
     client: httpx.Client,
-    tenants: list[SeededTenant],
+    tenants: list[EvalTenant],
     retriever: Retriever = no_search,
     k: int = 5,
 ) -> Report:
@@ -300,7 +303,7 @@ def evaluate(
             (tenant.persona.heldout, heldout),
         ):
             for q in questions:
-                retrieved = retriever(client, tenant.seeded.tenant_id, q.question)
+                retrieved = retriever(client, tenant.written.tenant_id, q.question)
                 scored.append(score_question(q, retrieved, tenant, others, k))
     return Report(
         tenants=tenants,
@@ -316,11 +319,11 @@ def evaluate(
 
 def format_report(report: Report, require_retrieval: bool = False) -> str:
     k = report.k
-    seeded = ", ".join(f"{t.name}: {len(t.seeded.ids)} records" for t in report.tenants)
+    written = ", ".join(f"{t.name}: {len(t.written.ids)} records" for t in report.tenants)
     links = sum(len(t.persona.records.successor_of()) for t in report.tenants)
     evolution = sum(len(_evolution_questions(t.persona)) for t in report.tenants)
     lines = [
-        f"Mutable eval -- seeded {seeded}; retriever: {report.retriever}",
+        f"Mutable eval -- wrote {written}; retriever: {report.retriever}",
         "",
         "Gates",
         f"  Cross-tenant leaks   {report.leaks:>4}   {_mark(report.leaks == 0)}"
@@ -406,7 +409,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with httpx.Client(base_url=args.base_url) as client:
-        report = evaluate(client, seed_all(client), k=args.k)
+        report = evaluate(client, write_all(client), k=args.k)
     print(format_report(report, args.require_retrieval))
     sys.exit(0 if report.passed(args.require_retrieval) else 1)
 

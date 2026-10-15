@@ -1,14 +1,16 @@
-"""Eval seed data format: typed records and gold questions, keyed by stable names.
+"""Read and validate the eval data files: typed records, and questions with their expected
+answers, all keyed by stable names.
 
 Layout -- one directory per persona under eval/data/:
 
-    records.yaml    facts / preferences / episodes to seed through the API
-    questions.yaml  gold questions (optional -- the isolation-only tenant has none)
-    heldout.yaml    held-out gold questions, same format; never used for tuning (optional)
+    records.yaml    facts / preferences / episodes to write into the app through the API
+    questions.yaml  questions and their expected answers (optional -- the isolation-only
+                    tenant has none)
+    heldout.yaml    held-out questions, same format; never used for tuning (optional)
 
 Records are referenced by a stable ``key`` (``<persona>.<type>.<slug>``, e.g.
-``maya.pref.diet.v2``), never by UUID: UUIDs are assigned by the API at seed time
-and the loader maps keys to them. Personas carry no tenant id either -- each seed
+``maya.pref.diet.v2``), never by UUID: UUIDs are assigned by the API when write_data.py
+writes the records, and it maps keys to them. Personas carry no tenant id either -- each
 run registers a fresh tenant, so re-runs never accumulate duplicate rows.
 
 Dates may be written as plain ``2025-05-01`` (read as midnight UTC) or full ISO
@@ -37,7 +39,7 @@ def _date_to_datetime(value: object) -> object:
 
 def _assume_utc(value: datetime) -> datetime:
     # Naive values (bare dates, or strings without an offset) are UTC, so every
-    # seed-data timestamp compares cleanly against every other.
+    # timestamp in the data files compares cleanly against every other.
     return value if value.tzinfo else value.replace(tzinfo=UTC)
 
 
@@ -58,25 +60,25 @@ class _Record(_Strict):
     valid_from: UtcDatetime | None = None
 
 
-class SeedFact(_Record):
+class FactRecord(_Record):
     pass
 
 
-class SeedPreference(_Record):
+class PreferenceRecord(_Record):
     strength: float = Field(ge=-1, le=1)
     supersedes: Key | None = None
 
 
-class SeedEpisode(_Record):
+class EpisodeRecord(_Record):
     event_time: UtcDatetime
     event_time_end: UtcDatetime | None = None
 
 
 class PersonaRecords(_Strict):
     persona: str
-    facts: list[SeedFact] = []
-    preferences: list[SeedPreference] = []
-    episodes: list[SeedEpisode] = []
+    facts: list[FactRecord] = []
+    preferences: list[PreferenceRecord] = []
+    episodes: list[EpisodeRecord] = []
 
     def all_records(self) -> list[_Record]:
         return [*self.facts, *self.preferences, *self.episodes]
@@ -91,7 +93,7 @@ class PersonaRecords(_Strict):
     @model_validator(mode="after")
     def check_records(self) -> Self:
         seen: set[str] = set()
-        for record, expected in (
+        for record, listed_type in (
             *((f, "fact") for f in self.facts),
             *((p, "preference") for p in self.preferences),
             *((e, "episode") for e in self.episodes),
@@ -99,14 +101,14 @@ class PersonaRecords(_Strict):
             if record.key in seen:
                 raise ValueError(f"duplicate key {record.key}")
             seen.add(record.key)
-            if self.record_type(record.key) != expected:
-                raise ValueError(f"{record.key} is listed under {expected}s but keyed otherwise")
+            if self.record_type(record.key) != listed_type:
+                raise ValueError(f"{record.key} is listed under {listed_type}s but keyed otherwise")
 
-        # Supersede chains: must point backwards in file order (the loader seeds
-        # top to bottom, so the old record has to exist first), each record is
+        # Supersede chains: must point backwards in file order (write_data.py
+        # writes top to bottom, so the old record has to exist first), each record is
         # replaced at most once, and both ends carry explicit dates so the
-        # validity windows are real history, not seed-run timestamps.
-        earlier: dict[str, SeedPreference] = {}
+        # validity windows are real history, not the time of the run.
+        earlier: dict[str, PreferenceRecord] = {}
         for pref in self.preferences:
             if pref.supersedes is not None:
                 old = earlier.get(pref.supersedes)
@@ -140,35 +142,36 @@ QuestionCategory = Literal[
 ]
 
 
-class GoldQuestion(_Strict):
+class Question(_Strict):
     id: str = Field(pattern=r"^[qh]\d{3}$")  # q = main set, h = held-out
     question: str
     category: QuestionCategory
-    gold: list[Key] = Field(min_length=1)
+    expected: list[Key] = Field(min_length=1)
     # Keys that must NOT appear in the top-k -- e.g. the superseded version for a
-    # current-preference question. A hit here fails the question even if gold was found.
+    # current-preference question. A hit here fails the question even if every expected
+    # record was found.
     must_exclude: list[Key] = []
     # Point in time the question is asking about ("in 2023, ..."), if any.
     as_of: UtcDatetime | None = None
 
     @model_validator(mode="after")
     def check_disjoint(self) -> Self:
-        if set(self.gold) & set(self.must_exclude):
-            raise ValueError(f"{self.id}: a key is in both gold and must_exclude")
+        if set(self.expected) & set(self.must_exclude):
+            raise ValueError(f"{self.id}: a key is in both expected and must_exclude")
         return self
 
 
 class Persona(_Strict):
     records: PersonaRecords
-    questions: list[GoldQuestion] = []
+    questions: list[Question] = []
     # Scored separately and reported in aggregate only, so search is never tuned against
     # them: they show the main set's scores weren't reached by overfitting it.
-    heldout: list[GoldQuestion] = []
+    heldout: list[Question] = []
 
-    def expected_route(self, question: GoldQuestion) -> set[RecordType]:
+    def expected_route(self, question: Question) -> set[RecordType]:
         """The types a correct router must send this question to -- derived from its
-        gold records rather than labeled separately, so the two can't disagree."""
-        return {self.records.record_type(key) for key in question.gold}
+        expected records rather than labeled separately, so the two can't disagree."""
+        return {self.records.record_type(key) for key in question.expected}
 
     @model_validator(mode="after")
     def check_questions(self) -> Self:
@@ -196,25 +199,27 @@ class Persona(_Strict):
                     raise ValueError(f"{q.id}: ids in this set must start with {prefix!r}")
 
         for q in questions:
-            for key in (*q.gold, *q.must_exclude):
+            for key in (*q.expected, *q.must_exclude):
                 if key not in records:
                     raise ValueError(f"{q.id}: unknown record key {key}")
             if len(self.expected_route(q)) > 1 and q.category != "cross_type":
-                raise ValueError(f"{q.id}: gold spans several types; category must be cross_type")
+                raise ValueError(
+                    f"{q.id}: expected records span several types; category must be cross_type"
+                )
 
-            gold_prefs = [k for k in q.gold if self.records.record_type(k) == "preference"]
+            expected_prefs = [k for k in q.expected if self.records.record_type(k) == "preference"]
             if q.category == "preference_current":
-                for key in gold_prefs:
+                for key in expected_prefs:
                     if key in successor:
                         raise ValueError(f"{q.id}: {key} is superseded, not current")
                     missing = set(chain_before(key)) - set(q.must_exclude)
                     if missing:
                         raise ValueError(f"{q.id}: must_exclude is missing {sorted(missing)}")
             if q.category == "preference_historical":
-                if not any(k in successor for k in gold_prefs):
-                    raise ValueError(f"{q.id}: historical question with no superseded gold")
+                if not any(k in successor for k in expected_prefs):
+                    raise ValueError(f"{q.id}: historical question expects no superseded record")
                 if q.as_of is not None:
-                    for key in gold_prefs:
+                    for key in expected_prefs:
                         if not _valid_at(records[key], successor, records, q.as_of):
                             raise ValueError(f"{q.id}: {key} was not valid at {q.as_of}")
         return self

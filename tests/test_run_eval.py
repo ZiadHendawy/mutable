@@ -2,26 +2,26 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from eval.harness import (
+from eval.run_eval import (
+    EvalTenant,
     Retrieved,
-    SeededTenant,
     check_isolation,
     check_supersede,
     evaluate,
     format_report,
-    seed_all,
+    write_all,
 )
 
 client = TestClient(app)
 
 
 @pytest.fixture(scope="module")
-def tenants() -> list[SeededTenant]:
-    # Shared by the read-only tests; tests that mutate state seed their own.
-    return seed_all(client)
+def tenants() -> list[EvalTenant]:
+    # Shared by the read-only tests; tests that mutate state write their own.
+    return write_all(client)
 
 
-def _maya(tenants: list[SeededTenant]) -> SeededTenant:
+def _maya(tenants: list[EvalTenant]) -> EvalTenant:
     return next(t for t in tenants if t.name == "maya")
 
 
@@ -33,14 +33,14 @@ def _retriever(pick):
         questions = [*maya.persona.questions, *maya.persona.heldout]
         question = next(q for q in questions if q.question == text)
         keys, route = pick(maya, question)
-        ids = [maya.seeded.ids.get(k) or _jonas_id(tenants, k) for k in keys]
+        ids = [maya.written.ids.get(k) or _jonas_id(tenants, k) for k in keys]
         return Retrieved(ids=ids, route=route)
 
     return retrieve
 
 
 def _jonas_id(tenants, key):
-    return next(t for t in tenants if t.name == "jonas").seeded.ids[key]
+    return next(t for t in tenants if t.name == "jonas").written.ids[key]
 
 
 def test_clean_run_passes_gates_with_no_search(tenants) -> None:
@@ -57,7 +57,7 @@ def test_clean_run_passes_gates_with_no_search(tenants) -> None:
 
 
 def test_oracle_retriever_scores_perfectly(tenants) -> None:
-    oracle = _retriever(lambda maya, q: (q.gold, maya.persona.expected_route(q)))
+    oracle = _retriever(lambda maya, q: (q.expected, maya.persona.expected_route(q)))
     report = evaluate(client, tenants, lambda *a: oracle(tenants, *a))
 
     assert report.recall == 1.0 and report.mrr == 1.0
@@ -67,7 +67,7 @@ def test_oracle_retriever_scores_perfectly(tenants) -> None:
 
 
 def test_leaked_result_fails_the_gate(tenants) -> None:
-    leaky = _retriever(lambda maya, q: ([*q.gold, "jonas.fact.lives_in_munich"], None))
+    leaky = _retriever(lambda maya, q: ([*q.expected, "jonas.fact.lives_in_munich"], None))
     report = evaluate(client, tenants, lambda *a: leaky(tenants, *a))
 
     assert report.retrieval_leaks == 95  # 75 main + 20 held-out
@@ -80,7 +80,7 @@ def test_leaked_result_fails_the_gate(tenants) -> None:
 def test_heldout_is_gated_but_never_itemized(tenants) -> None:
     maya = _maya(tenants)
     main_only = _retriever(
-        lambda maya, q: (q.gold if q.id.startswith("q") else [], maya.persona.expected_route(q))
+        lambda maya, q: (q.expected if q.id.startswith("q") else [], maya.persona.expected_route(q))
     )
     report = evaluate(client, tenants, lambda *a: main_only(tenants, *a))
 
@@ -95,11 +95,11 @@ def test_heldout_is_gated_but_never_itemized(tenants) -> None:
     for q in maya.persona.heldout:
         assert q.id not in text
         assert q.question not in text
-        assert all(key not in text for key in q.gold)
+        assert all(key not in text for key in q.expected)
 
 
 def test_excluded_record_in_results_fails_question(tenants) -> None:
-    stale = _retriever(lambda maya, q: ([*q.gold, *q.must_exclude], None))
+    stale = _retriever(lambda maya, q: ([*q.expected, *q.must_exclude], None))
     report = evaluate(client, tenants, lambda *a: stale(tenants, *a))
 
     q001 = next(r for r in report.results if r.question.id == "q001")
@@ -110,28 +110,28 @@ def test_excluded_record_in_results_fails_question(tenants) -> None:
 
 
 def test_supersede_check_catches_a_closed_current_preference() -> None:
-    maya = _maya(seed_all(client, ["maya"]))
-    # Close the current diet preference behind the dataset's back.
+    maya = _maya(write_all(client, ["maya"]))
+    # Close the current diet preference behind the data files' back.
     client.post(
         "/preferences",
         json={
             "content": "vegan",
             "confidence": 0.9,
             "strength": 0.9,
-            "supersedes": str(maya.seeded.ids["maya.pref.diet.v2"]),
+            "supersedes": str(maya.written.ids["maya.pref.diet.v2"]),
         },
         headers=maya.headers,
     )
     failures = check_supersede(client, maya)
 
     assert "maya: maya.pref.diet.v2 should be current but is closed" in failures
-    assert "maya: q001: gold maya.pref.diet.v2 is not current" in failures
+    assert "maya: q001: expected maya.pref.diet.v2 is not current" in failures
 
 
 def test_isolation_check_catches_a_shared_tenant(tenants) -> None:
     maya = _maya(tenants)
     # An "other" tenant that is secretly the same tenant must see everything.
-    impostor = SeededTenant("impostor", maya.persona, maya.seeded)
+    impostor = EvalTenant("impostor", maya.persona, maya.written)
     leaks, _ = check_isolation(client, [maya, impostor])
 
     assert leaks

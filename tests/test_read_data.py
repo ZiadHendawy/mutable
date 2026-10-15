@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from eval.dataset import Persona, load_persona
+from eval.read_data import Persona, load_persona
 
 BASE = {
     "records": {
@@ -41,14 +41,14 @@ BASE = {
             "id": "q001",
             "question": "current diet?",
             "category": "preference_current",
-            "gold": ["t.pref.diet.v2"],
+            "expected": ["t.pref.diet.v2"],
             "must_exclude": ["t.pref.diet.v1"],
         },
         {
             "id": "q002",
             "question": "diet in 2023?",
             "category": "preference_historical",
-            "gold": ["t.pref.diet.v1"],
+            "expected": ["t.pref.diet.v1"],
             "as_of": "2023-06-01",
         },
     ],
@@ -57,7 +57,7 @@ BASE = {
             "id": "h001",
             "question": "does she eat fish?",
             "category": "preference_current",
-            "gold": ["t.pref.diet.v2"],
+            "expected": ["t.pref.diet.v2"],
             "must_exclude": ["t.pref.diet.v1"],
         },
     ],
@@ -72,7 +72,7 @@ def _persona(mutate=None) -> Persona:
 
 
 @pytest.mark.parametrize("name", ["maya", "jonas"])
-def test_shipped_seed_data_validates(name: str) -> None:
+def test_shipped_data_validates(name: str) -> None:
     persona = load_persona(name)
     assert persona.records.all_records()
 
@@ -120,19 +120,19 @@ def _set(path, value):
         _set(["records", "preferences", 1, "valid_from"], "2010-01-01"),
         # chain without explicit dates
         _set(["records", "preferences", 0, "valid_from"], None),
-        # gold references an unknown key
-        _set(["questions", 0, "gold"], ["t.fact.nope"]),
+        # expected references an unknown key
+        _set(["questions", 0, "expected"], ["t.fact.nope"]),
         # current-preference question pointing at a superseded record
-        _set(["questions", 0, "gold"], ["t.pref.diet.v1"]),
+        _set(["questions", 0, "expected"], ["t.pref.diet.v1"]),
         # current-preference question that forgets to exclude the old version
         _set(["questions", 0, "must_exclude"], []),
-        # historical question with no superseded gold
-        _set(["questions", 1, "gold"], ["t.pref.diet.v2"]),
-        # as_of outside the gold record's validity window
+        # historical question expects no superseded record
+        _set(["questions", 1, "expected"], ["t.pref.diet.v2"]),
+        # as_of outside the expected record's validity window
         _set(["questions", 1, "as_of"], "2025-06-01"),
-        # gold spanning types without the cross_type category
-        _set(["questions", 0, "gold"], ["t.pref.diet.v2", "t.fact.city"]),
-        # same key in gold and must_exclude
+        # expected records spanning types without the cross_type category
+        _set(["questions", 0, "expected"], ["t.pref.diet.v2", "t.fact.city"]),
+        # same key in expected and must_exclude
         _set(["questions", 0, "must_exclude"], ["t.pref.diet.v1", "t.pref.diet.v2"]),
         # duplicate question id
         _set(["questions", 1, "id"], "q001"),
@@ -143,10 +143,10 @@ def _set(path, value):
         _set(["heldout", 0, "question"], "current diet?"),
         # held-out questions follow the same rules as the main set
         _set(["heldout", 0, "must_exclude"], []),
-        _set(["heldout", 0, "gold"], ["t.fact.nope"]),
+        _set(["heldout", 0, "expected"], ["t.fact.nope"]),
     ],
 )
-def test_invalid_seed_data_rejected(mutate) -> None:
+def test_invalid_data_rejected(mutate) -> None:
     with pytest.raises(ValidationError):
         _persona(mutate)
 

@@ -1,5 +1,5 @@
-# Maya Chen -- the rich persona (see eval/personas.md). Format: eval/dataset.py.
-# Seeded top to bottom: a preference's `supersedes` must name an earlier key.
+# Maya Chen -- the rich persona (see eval/personas.md). Format: eval/read_data.py.
+# Written to the API top to bottom: a preference's `supersedes` must name an earlier key.
 persona: Maya Chen
 
 facts:
@@ -124,7 +124,7 @@ facts:
     valid_from: 2025-10-01
 
 preferences:
-  # Supersede chains -- each old version precedes its replacement (see dataset.py)
+  # Supersede chains -- each old version precedes its replacement (see read_data.py)
   - key: maya.pref.work_location.v1
     content: Prefers working from an office, in person with the team
     confidence: 0.85

@@ -1,10 +1,10 @@
-# Jonas Weber -- isolation-only persona, no gold questions (see eval/personas.md).
+# Jonas Weber -- isolation-only persona, no questions (see eval/personas.md).
 # Content deliberately unlike Maya's, but on the same topics her questions ask about,
-# so a leaked record would actually rank in her results. Format: eval/dataset.py.
+# so a leaked record would actually rank in her results. Format: eval/read_data.py.
 persona: Jonas Weber
 
 facts:
-  # Keep first: tests/test_eval_seed.py uses facts[0] as its rejected-record probe.
+  # Keep first: tests/test_write_data.py uses facts[0] as its rejected-record probe.
   - key: jonas.fact.lives_in_munich
     content: Lives in Munich, Germany
     confidence: 0.95
