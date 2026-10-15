@@ -116,6 +116,24 @@ Toronto visits, two talks, two trips with Sam); and multi-day events via `event_
 
 81 of the 100 records are gold for some question; the other 19 are distractors.
 
+### Held-out questions
+20 more in `eval/data/maya/heldout.yaml`, ids `h001`–`h020`, the same category mix scaled down
+(3 / 3 / 6 / 3 / 3 / 2). They're never used for tuning: the harness scores them like the main
+set but reports only their totals, never question by question, and `--require-retrieval` holds
+them to the same bars. They show the main set's scores weren't reached by overfitting those 75
+questions.
+
+Written before any search code existed, and built to generalize rather than repeat:
+- Nine target records the main set never asks about (citizenship, volunteering, dark mode,
+  notifications, the onboarding launch, the holidays in Toronto, her 31st birthday, meeting
+  Sam, starting Portuguese lessons).
+- The rest reach known records from a new angle: an assistant's task instead of a direct
+  question ("I'm making salmon -- will Maya eat it?"), a synonym with no shared words
+  ("coriander" for the cilantro record), or an answer that takes a step of inference ("how old
+  is Maya?" against her birth date).
+- Current-preference questions carry no "now" or "still", so current has to be the default
+  rather than a keyword match.
+
 ## Tenant B — Jonas Weber
 
 The light persona: 28 records, isolation probes only, no gold questions. His *content* is

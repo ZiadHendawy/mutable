@@ -4,6 +4,7 @@ Layout -- one directory per persona under eval/data/:
 
     records.yaml    facts / preferences / episodes to seed through the API
     questions.yaml  gold questions (optional -- the isolation-only tenant has none)
+    heldout.yaml    held-out gold questions, same format; never used for tuning (optional)
 
 Records are referenced by a stable ``key`` (``<persona>.<type>.<slug>``, e.g.
 ``maya.pref.diet.v2``), never by UUID: UUIDs are assigned by the API at seed time
@@ -140,7 +141,7 @@ QuestionCategory = Literal[
 
 
 class GoldQuestion(_Strict):
-    id: str = Field(pattern=r"^q\d{3}$")
+    id: str = Field(pattern=r"^[qh]\d{3}$")  # q = main set, h = held-out
     question: str
     category: QuestionCategory
     gold: list[Key] = Field(min_length=1)
@@ -160,6 +161,9 @@ class GoldQuestion(_Strict):
 class Persona(_Strict):
     records: PersonaRecords
     questions: list[GoldQuestion] = []
+    # Scored separately and reported in aggregate only, so search is never tuned against
+    # them: they show the main set's scores weren't reached by overfitting it.
+    heldout: list[GoldQuestion] = []
 
     def expected_route(self, question: GoldQuestion) -> set[RecordType]:
         """The types a correct router must send this question to -- derived from its
@@ -179,11 +183,19 @@ class Persona(_Strict):
                 out.append(key)
             return out
 
-        ids = [q.id for q in self.questions]
+        questions = [*self.questions, *self.heldout]
+        ids = [q.id for q in questions]
         if len(ids) != len(set(ids)):
             raise ValueError("duplicate question id")
+        texts = [q.question for q in questions]
+        if len(texts) != len(set(texts)):
+            raise ValueError("duplicate question text")
+        for prefix, group in (("q", self.questions), ("h", self.heldout)):
+            for q in group:
+                if not q.id.startswith(prefix):
+                    raise ValueError(f"{q.id}: ids in this set must start with {prefix!r}")
 
-        for q in self.questions:
+        for q in questions:
             for key in (*q.gold, *q.must_exclude):
                 if key not in records:
                     raise ValueError(f"{q.id}: unknown record key {key}")
@@ -220,6 +232,14 @@ def _valid_at(
 def load_persona(name: str, data_dir: Path = DATA_DIR) -> Persona:
     directory = data_dir / name
     records = yaml.safe_load((directory / "records.yaml").read_text())
-    questions_path = directory / "questions.yaml"
-    questions = yaml.safe_load(questions_path.read_text()) if questions_path.exists() else []
-    return Persona.model_validate({"records": records, "questions": questions or []})
+    return Persona.model_validate(
+        {
+            "records": records,
+            "questions": _load_optional(directory / "questions.yaml"),
+            "heldout": _load_optional(directory / "heldout.yaml"),
+        }
+    )
+
+
+def _load_optional(path: Path) -> list:
+    return (yaml.safe_load(path.read_text()) or []) if path.exists() else []

@@ -30,7 +30,8 @@ def _retriever(pick):
 
     def retrieve(tenants, client_, tenant_id, text):
         maya = _maya(tenants)
-        question = next(q for q in maya.persona.questions if q.question == text)
+        questions = [*maya.persona.questions, *maya.persona.heldout]
+        question = next(q for q in questions if q.question == text)
         keys, route = pick(maya, question)
         ids = [maya.seeded.ids.get(k) or _jonas_id(tenants, k) for k in keys]
         return Retrieved(ids=ids, route=route)
@@ -49,6 +50,7 @@ def test_clean_run_passes_gates_with_no_search(tenants) -> None:
     assert report.isolation_probes > 0
     assert report.supersede_failures == []
     assert len(report.results) == 75
+    assert len(report.heldout) == 20
     assert report.recall == 0.0 and report.mrr == 0.0
     assert report.passed()
     assert not report.passed(require_retrieval=True)
@@ -59,7 +61,7 @@ def test_oracle_retriever_scores_perfectly(tenants) -> None:
     report = evaluate(client, tenants, lambda *a: oracle(tenants, *a))
 
     assert report.recall == 1.0 and report.mrr == 1.0
-    assert all(r.passed and r.route_ok for r in report.results)
+    assert all(r.passed and r.route_ok for r in [*report.results, *report.heldout])
     assert report.passed(require_retrieval=True)
     assert "Routing accuracy: 1.00" in format_report(report)
 
@@ -68,9 +70,32 @@ def test_leaked_result_fails_the_gate(tenants) -> None:
     leaky = _retriever(lambda maya, q: ([*q.gold, "jonas.fact.lives_in_munich"], None))
     report = evaluate(client, tenants, lambda *a: leaky(tenants, *a))
 
-    assert report.retrieval_leaks == 75
+    assert report.retrieval_leaks == 95  # 75 main + 20 held-out
     assert not report.passed()
-    assert "LEAKED:   jonas.fact.lives_in_munich" in format_report(report)
+    text = format_report(report)
+    assert "LEAKED:   jonas.fact.lives_in_munich" in text
+    assert "h001  LEAKED:   jonas.fact.lives_in_munich" in text
+
+
+def test_heldout_is_gated_but_never_itemized(tenants) -> None:
+    maya = _maya(tenants)
+    main_only = _retriever(
+        lambda maya, q: (q.gold if q.id.startswith("q") else [], maya.persona.expected_route(q))
+    )
+    report = evaluate(client, tenants, lambda *a: main_only(tenants, *a))
+
+    # Perfect on the main set, nothing on held-out: the bars still fail.
+    assert report.recall == 1.0 and report.mrr == 1.0
+    assert not report.heldout_meets_bars
+    assert report.passed()
+    assert not report.passed(require_retrieval=True)
+
+    text = format_report(report, require_retrieval=True)
+    assert "held-out FAIL" in text
+    for q in maya.persona.heldout:
+        assert q.id not in text
+        assert q.question not in text
+        assert all(key not in text for key in q.gold)
 
 
 def test_excluded_record_in_results_fails_question(tenants) -> None:

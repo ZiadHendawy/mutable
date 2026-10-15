@@ -5,6 +5,10 @@
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
 metrics are reported against the README's bars but only gate the run with
 --require-retrieval, since there is no search endpoint until milestone 4.
+
+Held-out questions are scored exactly like the main set but reported only as totals, never
+question by question, so search can't be tuned against them. --require-retrieval holds both
+sets to the bars.
 """
 
 import argparse
@@ -240,10 +244,11 @@ class Report:
     isolation_probes: int
     supersede_failures: list[str]
     results: list[QuestionResult]
+    heldout: list[QuestionResult]  # reported only in aggregate
 
     @property
     def retrieval_leaks(self) -> int:
-        return sum(len(r.leaked) for r in self.results)
+        return sum(len(r.leaked) for r in [*self.results, *self.heldout])
 
     @property
     def leaks(self) -> int:
@@ -257,10 +262,24 @@ class Report:
     def mrr(self) -> float:
         return _mean(r.reciprocal_rank for r in self.results)
 
+    @property
+    def heldout_meets_bars(self) -> bool:
+        if not self.heldout:
+            return True
+        return (
+            _mean(r.recall for r in self.heldout) >= RECALL_BAR
+            and _mean(r.reciprocal_rank for r in self.heldout) >= MRR_BAR
+        )
+
     def passed(self, require_retrieval: bool = False) -> bool:
         gates = self.leaks == 0 and not self.supersede_failures
         if require_retrieval:
-            gates = gates and self.recall >= RECALL_BAR and self.mrr >= MRR_BAR
+            gates = (
+                gates
+                and self.recall >= RECALL_BAR
+                and self.mrr >= MRR_BAR
+                and self.heldout_meets_bars
+            )
         return gates
 
 
@@ -272,12 +291,17 @@ def evaluate(
 ) -> Report:
     leaks, probes = check_isolation(client, tenants)
     supersede = [f for t in tenants for f in check_supersede(client, t)]
-    results = []
+    results: list[QuestionResult] = []
+    heldout: list[QuestionResult] = []
     for tenant in tenants:
         others = [t for t in tenants if t is not tenant]
-        for q in tenant.persona.questions:
-            retrieved = retriever(client, tenant.seeded.tenant_id, q.question)
-            results.append(score_question(q, retrieved, tenant, others, k))
+        for questions, scored in (
+            (tenant.persona.questions, results),
+            (tenant.persona.heldout, heldout),
+        ):
+            for q in questions:
+                retrieved = retriever(client, tenant.seeded.tenant_id, q.question)
+                scored.append(score_question(q, retrieved, tenant, others, k))
     return Report(
         tenants=tenants,
         retriever=getattr(retriever, "__name__", type(retriever).__name__),
@@ -286,6 +310,7 @@ def evaluate(
         isolation_probes=probes,
         supersede_failures=supersede,
         results=results,
+        heldout=heldout,
     )
 
 
@@ -309,15 +334,14 @@ def format_report(report: Report, require_retrieval: bool = False) -> str:
     categories = sorted({r.question.category for r in report.results})
     for category in [*categories, "all"]:
         rows = [r for r in report.results if category in ("all", r.question.category)]
-        lines.append(
-            f"  {category:<24}{len(rows):>5}{_mean(r.recall for r in rows):>11.2f}"
-            f"{_mean(r.reciprocal_rank for r in rows):>8.2f}"
-            f"{sum(len(r.excluded_hits) for r in rows):>16}"
-        )
+        lines.append(_metrics_row(category, rows))
+    if report.heldout:
+        lines.append(_metrics_row("held-out", report.heldout))
+    heldout = f"; held-out {_mark(report.heldout_meets_bars)}" if report.heldout else ""
     gating = "" if require_retrieval else "  (not gating; pass --require-retrieval)"
     lines.append(
         f"  Bars: Recall@{k} >= {RECALL_BAR} {_mark(report.recall >= RECALL_BAR)},"
-        f" MRR >= {MRR_BAR} {_mark(report.mrr >= MRR_BAR)}{gating}"
+        f" MRR >= {MRR_BAR} {_mark(report.mrr >= MRR_BAR)}{heldout}{gating}"
     )
     routed = [r.route_ok for r in report.results if r.route_ok is not None]
     routing = f"{_mean(routed):.2f}" if routed else "n/a (retriever reports no route)"
@@ -341,8 +365,23 @@ def format_report(report: Report, require_retrieval: bool = False) -> str:
             if r.leaked:
                 lines.append(f"       LEAKED:   {', '.join(r.leaked)}")
 
+    # A leak is a security failure, not a ranking miss, so it's named even here -- by id
+    # only. Anything else about a held-out question stays out of the report.
+    heldout_leaks = [r for r in report.heldout if r.leaked]
+    if heldout_leaks:
+        lines += ["", f"Held-out leaks ({len(heldout_leaks)}/{len(report.heldout)})"]
+        lines += [f"  {r.question.id}  LEAKED:   {', '.join(r.leaked)}" for r in heldout_leaks]
+
     lines += ["", "PASS" if report.passed(require_retrieval) else "FAIL"]
     return "\n".join(lines)
+
+
+def _metrics_row(label: str, rows: list[QuestionResult]) -> str:
+    return (
+        f"  {label:<24}{len(rows):>5}{_mean(r.recall for r in rows):>11.2f}"
+        f"{_mean(r.reciprocal_rank for r in rows):>8.2f}"
+        f"{sum(len(r.excluded_hits) for r in rows):>16}"
+    )
 
 
 def _mean(values) -> float:
@@ -361,7 +400,8 @@ def main() -> None:
     parser.add_argument(
         "--require-retrieval",
         action="store_true",
-        help="also fail the run when Recall/MRR are below the README's bars",
+        help="also fail the run when Recall/MRR are below the README's bars, on the main set "
+        "or the held-out set",
     )
     args = parser.parse_args()
 
