@@ -19,6 +19,7 @@ Mutable does four things to make that work:
 | [2. Roadmap](#2-roadmap) | What's done, what's next, and how each step is checked |
 | [3. Evaluation](#3-evaluation) | How we prove it remembers correctly |
 | [4. Gaps and open problems](#4-gaps-and-open-problems) | What doesn't work yet, and the plan for each |
+| [5. Code reference](#5-code-reference) | Every file, class and framework, for engineers working on the code |
 
 ---
 
@@ -306,7 +307,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
 | [4.9](#49-search-is-not-built-yet) | Search is not built yet | High | Milestone 4, in progress | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
-| [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, index design | Milestones 5–6 |
+| [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
 ### 4.1 Two preferences true at the same time
 
@@ -446,7 +447,11 @@ Memories include health details (allergies), relationships and locations. Isolat
 
 ### 4.11 Operations and scale
 
-There are no backups, no monitoring and no load testing yet. Endpoints are synchronous, on a single Postgres. That's fine for development. Operations are milestones 5–6.
+- **No backups, monitoring or load testing yet.** Endpoints are synchronous, on a single Postgres. That's fine for development.
+- **Dependencies set minimum versions only (`>=`), with no lock file.** Two builds a month apart can install different versions. Pinning them makes builds reproducible.
+- **Development passwords are committed to the repo,** in `docker-compose.yml`, `.env.example` and the migration that creates the API's database user. That's fine locally. Production needs real secrets, and the API user's password must not come from a migration.
+
+All of this is milestones 5–6.
 
 ### Proposed roadmap changes
 
@@ -459,3 +464,672 @@ These follow from the gaps above:
    - retract and erase (4.4)
    - versions for facts (4.5)
 3. **Milestone 8 is done only when** the extraction eval (4.2) passes, with zero wrong writes on its trap cases.
+
+---
+
+## 5. Code reference
+
+Every file, class and framework, for engineers working on the code. Sections 1–4 are the overview; this is the detail behind it.
+
+### 5.1 Repository layout
+
+```
+mutable/
+├── app/                          the API
+│   ├── main.py                   creates the FastAPI app; /health, /health/db, /whoami
+│   ├── config.py                 Settings: the two database URLs
+│   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
+│   ├── models.py                 SQLAlchemy table classes
+│   ├── schemas.py                Pydantic request and response classes
+│   └── routers/
+│       ├── facts.py              /facts
+│       ├── preferences.py        /preferences, including supersede
+│       └── episodes.py           /episodes
+├── migrations/
+│   ├── env.py                    Alembic setup; connects as the superuser
+│   ├── script.py.mako            template for new migrations
+│   └── versions/0001 … 0007      the schema history, in run order
+├── eval/
+│   ├── data/maya/                records.yaml · questions.yaml · heldout.yaml
+│   ├── data/jonas/               records.yaml
+│   ├── personas.md               who Maya and Jonas are
+│   ├── read_data.py              step 1: read and validate the files
+│   ├── write_data.py             step 2: write them into the app
+│   ├── check_isolation.py        step 3a: isolation check
+│   ├── check_supersede.py        step 3b: history check
+│   ├── score_retrieval.py        step 3c: search scoring
+│   ├── report.py                 step 4: totals, pass/fail, the printed table
+│   └── run_eval.py               runs steps 1–4; the command-line entry point
+├── tests/
+│   ├── conftest.py               shared fixtures: client, tenant, other_tenant
+│   └── test_*.py                 API, isolation, transaction and eval tests
+├── docs/design.md                this document
+├── Dockerfile · docker-compose.yml
+├── alembic.ini · pyproject.toml · requirements.txt · requirements-dev.txt · .env.example
+└── .github/workflows/ci.yml
+```
+
+`app/`, `app/routers/`, `eval/` and `tests/` each also have an empty `__init__.py`, which makes them importable Python packages.
+
+### 5.2 Frameworks and libraries
+
+```mermaid
+flowchart TB
+    subgraph run["Runtime"]
+        compose["Docker Compose"] --> uvicorn["uvicorn<br/>web server"]
+    end
+    subgraph web["Web layer: app/"]
+        fastapi["FastAPI<br/>on Starlette"] --> pydantic["Pydantic<br/>request checking"]
+        settings["pydantic-settings<br/>configuration"]
+    end
+    subgraph data["Data access"]
+        sqlalchemy["SQLAlchemy 2"] --> psycopg["psycopg 3<br/>driver"]
+    end
+    subgraph db["Database"]
+        postgres[("PostgreSQL 16<br/>+ pgvector + RLS")]
+    end
+    subgraph tools["Tooling"]
+        alembic["Alembic<br/>migrations"]
+        pytest["pytest"]
+        httpx["httpx"]
+        yaml["PyYAML"]
+        ruff["Ruff"]
+        gha["GitHub Actions"]
+    end
+
+    uvicorn --> fastapi
+    fastapi --> sqlalchemy
+    psycopg --> postgres
+    alembic --> sqlalchemy
+```
+
+| Library | Tested with | Required | Used in | What it does here |
+|---|---|---|---|---|
+| **FastAPI** | 0.141 | ≥ 0.115 | `app/` | Routing, request parsing, dependencies (`Depends`), API docs at `/docs` |
+| **Starlette** | 1.7 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
+| **uvicorn** | 0.54 | ≥ 0.32 | Dockerfile, CI | The web server that runs the app |
+| **Pydantic** | 2.13 | via FastAPI | `app/schemas.py`, `eval/read_data.py` | Data checking from type hints |
+| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
+| **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
+| **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
+| **Alembic** | 1.20 | ≥ 1.13 | `migrations/` | Numbered schema migrations |
+| **pgvector** (Python) | 0.5 | ≥ 0.3 | not imported yet | Vector column types for SQLAlchemy; used from milestone 4 |
+| **httpx** | 0.28 | ≥ 0.27, dev | `eval/`, `tests/` | HTTP client; same interface as `TestClient`, so eval code runs against both |
+| **PyYAML** | 6.0 | ≥ 6.0, dev | `eval/read_data.py` | Reads the eval's YAML files (`safe_load`) |
+| **pytest** | 9.1 | ≥ 8.3, dev | `tests/` | Test runner, fixtures, `monkeypatch` |
+| **Ruff** | 0.16 | ≥ 0.7, dev | CI | Lint and formatting |
+
+The platform:
+
+- **Python:** 3.12 (`python:3.12-slim` image)
+- **Database:** PostgreSQL 16 (`pgvector/pgvector:pg16` image), with the pgvector extension, 0.8 when tested
+- **Containers:** Docker Compose
+- **CI:** GitHub Actions
+
+"Tested with" is what's installed today. The files set minimums only; see [gap 4.11](#411-operations-and-scale).
+
+### 5.3 How the modules depend on each other
+
+**The API, and the migrations that share its models:**
+
+```mermaid
+flowchart LR
+    main["main.py"] --> routers["routers/<br/>facts · preferences · episodes"]
+    main --> dbmod["db.py"]
+    routers --> dbmod
+    routers --> models["models.py"]
+    routers --> schemas["schemas.py"]
+    dbmod --> config["config.py"]
+    env["migrations/env.py"] --> config
+    env --> models
+```
+
+**The eval, from the entry point down to the data files:**
+
+```mermaid
+flowchart TB
+    run["run_eval.py"] --> iso["check_isolation.py"]
+    run --> sup["check_supersede.py"]
+    run --> score["score_retrieval.py"]
+    run --> report["report.py"]
+    report --> sup
+    report --> score
+    iso --> write["write_data.py"]
+    sup --> write
+    score --> write
+    run --> write
+    write --> read["read_data.py"]
+    sup --> read
+    score --> read
+```
+
+**The eval never imports the app.** It reaches the API only over HTTP, like any outside client, so it tests the real API rather than the code's internals. Only `tests/` imports both: it drives the app in-process, and passes that same in-process client to the eval code.
+
+### 5.4 The API (`app/`)
+
+#### Configuration: `config.py`
+
+`Settings`, a pydantic-settings `BaseSettings`, has two fields. Values come from environment variables first, then `.env`, then these defaults:
+
+| Field | Default | Used by |
+|---|---|---|
+| `database_url` | `postgresql+psycopg://mutable_app:…@localhost:5432/mutable` | The running API: a restricted user, so Row-Level Security applies |
+| `admin_database_url` | `postgresql+psycopg://mutable:…@localhost:5432/mutable` | Migrations only: the superuser |
+
+`settings = Settings()` is created once, when the module is imported.
+
+#### Sessions and tenant scoping: `db.py`
+
+| Name | What it is |
+|---|---|
+| `engine` | `create_engine(settings.database_url)`: one connection pool per process, as `mutable_app` |
+| `SessionLocal` | A session factory (`autoflush=False`, `autocommit=False`) |
+| `get_db()` | A dependency that opens a session, yields it, and always closes it |
+| `get_tenant_id()` | A dependency that reads the `X-Tenant-Id` header as a UUID. If it's missing or not a UUID, the request gets a 422 |
+| `get_tenant_db()` | A dependency that scopes the session to the tenant and owns the transaction (below) |
+| `TENANT_DB` | `Depends(get_tenant_db, scope="function")`: what every tenant endpoint uses |
+
+How an endpoint gets its session:
+
+```mermaid
+flowchart LR
+    ep["endpoint<br/>db = TENANT_DB"] --> tdb["get_tenant_db"]
+    create["create_* endpoints<br/>also take tenant_id"] --> tid
+    tdb --> tid["get_tenant_id<br/>X-Tenant-Id → UUID"]
+    tdb --> gdb["get_db"]
+    gdb --> sl["SessionLocal"]
+    sl --> eng["engine<br/>settings.database_url"]
+```
+
+What `get_tenant_db` does on every request:
+
+```mermaid
+flowchart TD
+    open["get_db opens a session"] --> set["set_config('app.tenant_id', tenant, true)<br/>local to this transaction"]
+    set --> reg["INSERT INTO tenants … ON CONFLICT DO NOTHING<br/>first use creates the tenant"]
+    reg --> yield["yield the session to the endpoint"]
+    yield --> ok{"endpoint and<br/>commit succeed?"}
+    ok -- yes --> commit["COMMIT"]
+    ok -- no --> rollback["ROLLBACK, re-raise<br/>caller gets the error or a 500"]
+    commit --> close["get_db closes the session"]
+    rollback --> close
+    close --> resp["response sent<br/>(scope=function: only after the commit)"]
+```
+
+#### The app and its endpoints: `main.py` and `routers/`
+
+`main.py` creates `app = FastAPI(title="Mutable")`, mounts the three routers, and defines three endpoints of its own. FastAPI also serves interactive docs at `/docs` and `/redoc`, and the schema at `/openapi.json`.
+
+| Method | Path | Function | Success | Errors | Notes |
+|---|---|---|---|---|---|
+| GET | `/health` | `health` | 200 | — | No database access |
+| GET | `/health/db` | `health_db` | 200 | 500 | `SELECT 1` through `get_db`; no tenant needed |
+| GET | `/whoami` | `whoami` | 200 | 422 | Returns the tenant as the database sees it |
+| POST | `/facts` | `create_fact` | 201 | 422 | |
+| GET | `/facts` | `list_facts` | 200 | 422 | Current only (`valid_to IS NULL`), newest first |
+| GET | `/facts/{id}` | `get_fact` | 200 | 404 | |
+| DELETE | `/facts/{id}` | `delete_fact` | 204 | 404 | Permanent |
+| POST | `/preferences` | `create_preference` | 201 | 404, 409, 422 | Supersede (below) |
+| GET | `/preferences` | `list_preferences` | 200 | 422 | Current only, newest first |
+| GET | `/preferences/{id}` | `get_preference` | 200 | 404 | Also returns closed, superseded versions |
+| DELETE | `/preferences/{id}` | `delete_preference` | 204 | 404, 409 | Refused if it replaced another version |
+| POST | `/episodes` | `create_episode` | 201 | 422 | End can't be before start |
+| GET | `/episodes` | `list_episodes` | 200 | 422 | Current only, latest event first |
+| GET | `/episodes/{id}` | `get_episode` | 200 | 404 | |
+| DELETE | `/episodes/{id}` | `delete_episode` | 204 | 404 | Permanent |
+
+Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header, and returns 422 without it. Endpoints are plain `def`, not `async`, so FastAPI runs them in a thread pool.
+
+**What each status code means:**
+
+| Code | When |
+|---|---|
+| 200 / 201 / 204 | Success |
+| 404 | No record with that id, **or** it belongs to another tenant. The two are indistinguishable by design, so ids don't leak. |
+| 409 | Superseding a preference that's already closed, or deleting a preference that replaced another |
+| 422 | The body or header fails validation, or a replacement is dated before the record it replaces |
+| 500 | Anything unexpected, including a failed commit. The transaction is rolled back. |
+
+#### Creating and deleting a preference
+
+```mermaid
+flowchart TD
+    start["POST /preferences"] --> valid{"body valid?"}
+    valid -- no --> e422["422"]
+    valid -- yes --> insert["insert the new row, flush"]
+    insert --> sup{"supersedes<br/>given?"}
+    sup -- no --> ok["201 Created"]
+    sup -- yes --> found{"old row found?<br/>other tenants' rows are invisible"}
+    found -- no --> e404["404, rolled back"]
+    found -- yes --> closed{"old row already<br/>closed?"}
+    closed -- yes --> e409["409, rolled back"]
+    closed -- no --> early{"new valid_from<br/>before the old one's?"}
+    early -- yes --> e422b["422, rolled back"]
+    early -- no --> link["old.valid_to = new.valid_from<br/>old.superseded_by = new.id"]
+    link --> ok
+```
+
+```mermaid
+flowchart LR
+    del["DELETE /preferences/{id}"] --> f{"found?"}
+    f -- no --> n404["404"]
+    f -- yes --> r{"does an older version<br/>point to it?"}
+    r -- yes --> n409["409, naming that version"]
+    r -- no --> d["delete"] --> n204["204"]
+```
+
+The new row is inserted *before* the supersede checks run, so its id and `valid_from` (which defaults to "now") are known. If any check fails, the whole transaction rolls back, and nothing is saved.
+
+#### Table classes: `models.py`
+
+```mermaid
+classDiagram
+    direction TB
+    class Base {
+        <<DeclarativeBase>>
+    }
+    class Tenant {
+        <<tenants>>
+        id: UUID, primary key
+        created_at: timestamptz, default now
+    }
+    class MemoryFact {
+        <<memory_facts>>
+        id: UUID, primary key
+        tenant_id: UUID, FK tenants.id, indexed
+        content: text
+        confidence: float, 0 to 1
+        source: text, optional
+        valid_from: timestamptz, default now
+        valid_to: timestamptz, optional
+        created_at: timestamptz, default now
+    }
+    class MemoryPreference {
+        <<memory_preferences>>
+        same columns as MemoryFact
+        strength: float, -1 to 1
+        superseded_by: UUID, FK memory_preferences.id, optional
+    }
+    class MemoryEpisode {
+        <<memory_episodes>>
+        same columns as MemoryFact
+        event_time: timestamptz, indexed
+        event_time_end: timestamptz, optional
+    }
+    Base <|-- Tenant
+    Base <|-- MemoryFact
+    Base <|-- MemoryPreference
+    Base <|-- MemoryEpisode
+    Tenant "1" --> "*" MemoryFact : owns
+    Tenant "1" --> "*" MemoryPreference : owns
+    Tenant "1" --> "*" MemoryEpisode : owns
+    MemoryPreference --> MemoryPreference : superseded_by
+```
+
+| Table | Check constraints | Indexes |
+|---|---|---|
+| `memory_facts` | `ck_memory_facts_confidence_range` | `ix_memory_facts_tenant_id` |
+| `memory_preferences` | `ck_memory_preferences_confidence_range`, `ck_memory_preferences_strength_range` | `ix_memory_preferences_tenant_id` |
+| `memory_episodes` | `ck_memory_episodes_confidence_range`, `ck_memory_episodes_time_order` (end ≥ start) | `ix_memory_episodes_tenant_id`, `ix_memory_episodes_event_time` |
+
+The classes declare columns and foreign keys only, with no ORM `relationship()`, so every load is an explicit query. Ids are generated in Python (`uuid4`); timestamps default to the database's `now()`.
+
+#### Request and response classes: `schemas.py`
+
+```mermaid
+classDiagram
+    direction LR
+    class MemoryFactCreate {
+        content: str
+        confidence: float, 0 to 1
+        source: optional
+        valid_from: optional
+    }
+    class MemoryPreferenceCreate {
+        content: str
+        confidence: float, 0 to 1
+        strength: float, -1 to 1
+        source: optional
+        valid_from: optional
+        supersedes: UUID, optional
+    }
+    class MemoryEpisodeCreate {
+        content: str
+        confidence: float, 0 to 1
+        event_time: datetime, required
+        event_time_end: optional
+        source: optional
+        valid_from: optional
+        check_time_order()
+    }
+    class MemoryFactRead {
+        <<from_attributes>>
+        every column of memory_facts
+    }
+    class MemoryPreferenceRead {
+        <<from_attributes>>
+        every column of memory_preferences
+    }
+    class MemoryEpisodeRead {
+        <<from_attributes>>
+        every column of memory_episodes
+    }
+    MemoryFactCreate ..> MemoryFactRead : POST /facts returns
+    MemoryPreferenceCreate ..> MemoryPreferenceRead : POST /preferences returns
+    MemoryEpisodeCreate ..> MemoryEpisodeRead : POST /episodes returns
+```
+
+- **`*Create` classes are what a caller may send.** They have no `id` or `tenant_id`; the server sets those. Unknown fields are ignored, not rejected, which is Pydantic's default.
+- **`*Read` classes are what comes back.** `from_attributes` lets them build straight from a table row.
+- **An omitted `valid_from` falls through to the database default (now).** Endpoints drop empty fields before inserting (`exclude_none`).
+- **`supersedes` is an instruction, not a column.** It's removed before the insert and acted on separately.
+
+### 5.5 The database (`migrations/`)
+
+```mermaid
+flowchart LR
+    m1["0001<br/>pgvector"] --> m2["0002<br/>tenants"] --> m3["0003<br/>memory_facts"] --> m4["0004<br/>memory_preferences"] --> m5["0005<br/>memory_episodes"] --> m6["0006<br/>mutable_app user"] --> m7["0007<br/>Row-Level Security"]
+```
+
+| # | What it does |
+|---|---|
+| 0001 | `CREATE EXTENSION vector` |
+| 0002 | `tenants` table |
+| 0003 | `memory_facts`, with its constraint and index |
+| 0004 | `memory_preferences`, including the `superseded_by` self-reference |
+| 0005 | `memory_episodes`, including the time-order constraint and the `event_time` index |
+| 0006 | Creates the `mutable_app` login user. It can use the schema, and read, insert, update and delete in the four tables, but nothing else: it can't create tables or change rules |
+| 0007 | Turns on Row-Level Security for all four tables, and adds the `tenant_isolation` rule to each |
+
+The isolation rule, as created by 0007 (shown for `memory_facts`; the other tables are the same, and `tenants` checks `id`):
+
+```sql
+ALTER TABLE memory_facts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_facts FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON memory_facts
+    FOR ALL
+    USING      (tenant_id = current_setting('app.tenant_id')::uuid)   -- what can be read
+    WITH CHECK (tenant_id = current_setting('app.tenant_id')::uuid);  -- what can be written
+```
+
+`FORCE` would apply the rule even to the table's owner. That's redundant today, since the owner is a superuser and superusers always bypass it, but it's cheap insurance if ownership ever changes.
+
+**Alembic's setup:**
+
+- **`migrations/env.py`** connects with `settings.admin_database_url`, the superuser, and points autogenerate at `Base.metadata`. `alembic check` confirms the models and migrations agree. It uses no connection pool, and supports an offline mode that only prints the SQL.
+- **`alembic.ini`** holds the folder location and logging, and notes how to number the next migration: `--rev-id 0008`.
+- **`script.py.mako`** is the template for new migration files.
+
+### 5.6 The eval (`eval/`)
+
+#### One run, as function calls
+
+```mermaid
+flowchart TD
+    main["run_eval.main()<br/>parse --base-url, -k, --require-retrieval"] --> wa["write_data.write_all()"]
+    wa --> lp["read_data.load_persona()<br/>maya, jonas: validate everything first"]
+    wa --> wp["write_data.write_persona()<br/>per person: POST every record"]
+    main --> ev["run_eval.evaluate()"]
+    ev --> ci["check_isolation()"]
+    ev --> cs["check_supersede()<br/>per person"]
+    ev --> sa["score_all()"]
+    sa --> rt["retriever(question text)<br/>today: no_search"]
+    sa --> sq["score_question()<br/>per question"]
+    ev --> rep["Report"]
+    main --> fr["report.format_report()<br/>print, exit 0 or 1"]
+```
+
+#### Reading the data: `read_data.py`
+
+```mermaid
+classDiagram
+    direction LR
+    class _Strict {
+        <<pydantic BaseModel>>
+        extra = forbid
+    }
+    class Persona {
+        records
+        questions: list of Question
+        heldout: list of Question
+        expected_route()
+        check_questions()
+    }
+    class PersonaRecords {
+        persona: display name
+        facts, preferences, episodes
+        all_records()
+        record_type()
+        successor_of()
+        check_records()
+    }
+    class Question {
+        id: q### or h###
+        question: str
+        category
+        expected: keys, at least one
+        must_exclude: keys
+        as_of: optional date
+        check_disjoint()
+    }
+    class _Record {
+        key, content, confidence
+        source, valid_from
+    }
+    class FactRecord
+    class PreferenceRecord {
+        strength
+        supersedes: key
+    }
+    class EpisodeRecord {
+        event_time
+        event_time_end
+    }
+    _Strict <|-- Persona
+    _Strict <|-- PersonaRecords
+    _Strict <|-- Question
+    _Strict <|-- _Record
+    _Record <|-- FactRecord
+    _Record <|-- PreferenceRecord
+    _Record <|-- EpisodeRecord
+    Persona *-- PersonaRecords
+    Persona o-- Question
+    PersonaRecords o-- FactRecord
+    PersonaRecords o-- PreferenceRecord
+    PersonaRecords o-- EpisodeRecord
+```
+
+**Helpers:**
+
+| Name | What it does |
+|---|---|
+| `RecordType` | `"fact"`, `"preference"` or `"episode"` |
+| `TYPE_SEGMENT` | Maps the key's middle part to a type (`pref` → `preference`) |
+| `Key` | The key pattern: `persona.type.slug`, with an optional `.vN` |
+| `UtcDatetime` | A bare date becomes midnight UTC, and a time with no zone is UTC |
+| `load_persona(name)` | Reads the persona's files and validates everything; a missing questions file counts as empty |
+
+**Every rule a data file must pass**, checked before anything is written:
+
+| Rule | Checked by |
+|---|---|
+| No unknown fields anywhere: a typo fails instead of being dropped | `_Strict` (`extra="forbid"`) |
+| Keys match the pattern; confidence is 0–1, strength −1 to 1 | field types |
+| No duplicate keys; a key's type matches the list it's in | `check_records` |
+| `supersedes` points to an *earlier* preference in the file | `check_records` |
+| Both ends of a supersede have `valid_from`, and the replacement isn't dated earlier | `check_records` |
+| No preference is superseded twice; no episode ends before it starts | `check_records` |
+| Question ids are `q###` (main) or `h###` (held-out), unique; question texts are unique across both sets | `check_questions` |
+| `expected` is never empty, and no key is both expected and excluded | `Question` |
+| Every key a question mentions exists | `check_questions` |
+| Expected records of several types require the `cross_type` category | `check_questions` |
+| A "current" question never expects a superseded record, and excludes every older version | `check_questions` |
+| A "historical" question expects at least one superseded record, and with `as_of`, every expected preference was valid on that date | `check_questions` |
+
+`expected_route(question)` derives the record types a correct router should search from the question's expected records, rather than from a separate label, so the two can't disagree.
+
+#### Writing the data: `write_data.py`
+
+| Name | What it is |
+|---|---|
+| `PERSONAS` | `["maya", "jonas"]`, the default set |
+| `PATHS` | The API path for each record type, shared with the isolation check |
+| `WrittenPersona` | One person as written: `name`, `persona`, `tenant_id`, `ids` (key → id). It also has `key_of`, the reverse lookup, and `headers`, its `X-Tenant-Id` |
+| `WriteError` | Raised when the API refuses a record, naming its key |
+| `write_all(client, names)` | Validates every person first, then writes each one |
+| `write_persona(client, name, persona)` | Creates a new tenant and POSTs the facts, then the preferences (turning each `supersedes` key into the id it received), then the episodes |
+
+It also works on its own: `python -m eval.write_data maya jonas` prints each tenant id and its key → id map as JSON.
+
+#### The checks
+
+- **`check_isolation(client, tenants)`** returns the leaks and how many probes it made. For every pair of different people, it does two things:
+  - fetches each of one person's records by id, as the other person, and expects a 404
+  - reads each list endpoint as the other person, and expects none of the first person's ids in it
+- **`check_supersede(client, tenant)`** returns a list of failures. It reads every preference back through the API and checks four things:
+  - each old version's `superseded_by` and `valid_to` match its successor
+  - current versions are open and listed
+  - closed versions aren't listed
+  - every changed-preference question's expected and excluded records agree with the stored dates
+
+  `evolution_questions()` selects those changed-preference questions.
+- **`score_retrieval.py`** defines what a search must return, and how it's scored:
+
+| Name | What it is |
+|---|---|
+| `Retrieved` | What a search returns: ranked `ids`, and optionally the `route` (record types) it chose |
+| `Retriever` | The search interface: (client, tenant id, question text) → `Retrieved` |
+| `no_search` | Today's placeholder retriever: finds nothing |
+| `QuestionResult` | One question's score: `missing`, `excluded_hits`, `leaked`, `reciprocal_rank`, `route_ok`, plus `recall` and `passed` |
+| `score_all(...)` | Asks every question for every person; returns main and held-out results separately |
+
+How `score_question` grades one answer:
+
+```mermaid
+flowchart TD
+    top["take the top k ids<br/>(k = 5)"] --> own{"each id: one of<br/>this person's records?"}
+    own -- no --> leak["count it as a leak,<br/>named if it's a known person's"]
+    own -- yes --> keys["map the id back to its key"]
+    keys --> rank["rank = position of the first expected key<br/>reciprocal rank = 1 ÷ rank, or 0"]
+    keys --> miss["missing = expected keys not in the top k"]
+    keys --> exc["excluded hits = must_exclude keys in the top k"]
+    rank & miss & exc & leak --> res["QuestionResult<br/>passed = nothing missing, excluded or leaked"]
+```
+
+#### The verdict: `report.py` and `run_eval.py`
+
+| Name | What it is |
+|---|---|
+| `RECALL_BAR`, `MRR_BAR` | 0.9 and 0.8 |
+| `Report` | Everything a run found: the tenants, the retriever's name, k, isolation leaks and probe count, supersede failures, main results, held-out results |
+| `Report.leaks` | Isolation leaks plus leaks in search results |
+| `Report.recall`, `Report.mrr` | Averages over the main questions |
+| `Report.heldout_meets_bars` | Whether the held-out averages reach both bars |
+| `Report.passed(require_retrieval)` | No leaks and no supersede failures. With `require_retrieval`, both bars must also be met on the main set and the held-out set |
+| `format_report(report)` | Prints the gates, a score table by category plus one held-out row, the bars, routing accuracy, each failed main question, and any held-out leaks (by id only) |
+| `evaluate(client, tenants, retriever, k)` | Runs the three checks and builds the `Report` |
+
+| Command-line flag | Default | Meaning |
+|---|---|---|
+| `--base-url` | `http://localhost:8000` | Where the API is running |
+| `-k` | `5` | How many top results to score |
+| `--require-retrieval` | off | Also fail when Recall or MRR is below the bar |
+
+The exit code is 0 when the run passes and 1 when it fails, which is what lets CI block a pull request.
+
+#### The data files
+
+```yaml
+# eval/data/maya/records.yaml
+persona: Maya Chen
+facts:
+  - key: maya.fact.lives_in_lisbon
+    content: Lives in Lisbon, Portugal
+    confidence: 0.95
+    valid_from: 2024-09-15            # optional
+preferences:
+  - key: maya.pref.diet.v2
+    content: Is pescatarian -- eats fish, but no other meat
+    confidence: 0.9
+    strength: 0.8                     # -1 dislike … +1 like
+    valid_from: 2025-05-01
+    supersedes: maya.pref.diet.v1     # must appear earlier in the file
+episodes:
+  - key: maya.ep.adopted_biscuit
+    content: Adopted Biscuit, an orange tabby cat, from a Lisbon animal shelter
+    confidence: 0.95
+    event_time: 2025-02-08
+    event_time_end: …                 # optional, for multi-day events
+```
+
+`questions.yaml` and `heldout.yaml` are lists of questions in the format shown in [3.3](#33-questions-and-their-expected-answers): `id`, `question`, `category`, `expected`, plus optional `must_exclude` and `as_of`.
+
+### 5.7 Tests (`tests/`)
+
+```mermaid
+flowchart LR
+    client["client<br/>session-wide TestClient(app)<br/>no tenant"] --> tenant["tenant<br/>new per test"]
+    client --> other["other_tenant<br/>new per test"]
+    tenant --> tc["TenantClient<br/>id · headers · get · post · delete<br/>sends X-Tenant-Id on every request"]
+    other --> tc
+    client --> evaltests["eval tests<br/>pass client to write_all / evaluate"]
+```
+
+The tests follow three principles:
+
+- **Everything runs against the real Postgres, with no mocks.** The real constraints and Row-Level Security get tested. The one exception is `test_transactions.py`, which patches `Session.commit` to fail on purpose.
+- **Each test gets a brand-new tenant,** so tests can't see each other's rows, even across runs against the same database.
+- **`TestClient` calls the app in-process**, with no server running, and doubles as the HTTP client for the eval code.
+
+| File | What it proves |
+|---|---|
+| `test_health.py` | `/health` and `/health/db` respond |
+| `test_whoami.py` | The tenant header is required, must be a UUID, and is what the database sees |
+| `test_facts.py` | Create, get, list and delete. Lists are scoped to the tenant, and another tenant gets a 404. Plus the confidence range, the required header, and a backdated `valid_from` |
+| `test_preferences.py` | The same, plus supersede:<br/>• closes the old version and links it to the new one<br/>• can't supersede twice (409), a missing one (404) or another tenant's (404)<br/>• backdated versions line up exactly<br/>• a replacement dated earlier is rejected and rolled back<br/>• deleting a version that replaced another is refused, but deleting the oldest is allowed |
+| `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
+| `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
+| `test_transactions.py` | A failed commit returns 500, and nothing is saved |
+| `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
+| `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
+| `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check |
+
+### 5.8 Running it: containers, configuration and CI
+
+```mermaid
+flowchart LR
+    dev["developer machine"] -- "localhost:8000" --> api
+    dev -- "localhost:5432" --> db
+    subgraph compose["docker compose"]
+        api["api<br/>python:3.12-slim<br/>uvicorn --reload<br/>code mounted at /app"]
+        db["db<br/>pgvector/pgvector:pg16<br/>health check: pg_isready"]
+        vol[("volume: pgdata")]
+    end
+    api -- "db:5432 as mutable_app" --> db
+    db --- vol
+```
+
+| File | What it sets |
+|---|---|
+| `Dockerfile` | `python:3.12-slim`; installs `requirements-dev.txt`; runs `uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload` |
+| `docker-compose.yml` | **db:** user, password and database `mutable`; port 5432; a health check every 5 seconds; data kept in the `pgdata` volume. **api:** both database URLs pointing at host `db`; port 8000; starts only once the db is healthy; mounts the repo at `/app` for live reload |
+| `.env.example` | The same two URLs pointing at `localhost`, for running outside Docker. Copy it to `.env` |
+| `pyproject.toml` | **Ruff:** 100-character lines, Python 3.12, rule sets E, F, I and UP. **pytest:** the `tests/` folder, with the project root on the import path |
+| `requirements.txt` / `requirements-dev.txt` | Runtime libraries / plus pytest, httpx, Ruff and PyYAML |
+| `.gitignore`, `.dockerignore` | Keep the virtual environment, caches and `.env` out of git and out of the image |
+
+CI, in `.github/workflows/ci.yml`, runs on every pull request and on every push to `main`:
+
+```mermaid
+flowchart LR
+    trig["pull request,<br/>or push to main"] --> pg["Postgres service<br/>pgvector:pg16"]
+    pg --> py["Python 3.12,<br/>install requirements-dev"]
+    py --> lint["ruff check"]
+    lint --> mig["alembic upgrade head"]
+    mig --> test["pytest"]
+    test --> up["start uvicorn,<br/>wait for /health"]
+    up --> ev["python -m eval.run_eval<br/>report → job summary"]
+    ev --> gate{"exit code 0?"}
+    gate -- yes --> pass["check passes"]
+    gate -- no --> fail["check fails;<br/>print the API log"]
+```
