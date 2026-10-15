@@ -1,98 +1,60 @@
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-client = TestClient(app)
-
-TENANT_A = "44444444-4444-4444-4444-444444444444"
-TENANT_B = "55555555-5555-5555-5555-555555555555"
-
-
-def _headers(tenant_id: str) -> dict[str, str]:
-    return {"X-Tenant-Id": tenant_id}
-
-
-def test_create_and_get_fact() -> None:
-    response = client.post(
-        "/facts",
-        json={"content": "lives in London", "confidence": 0.9},
-        headers=_headers(TENANT_A),
-    )
+def test_create_and_get_fact(tenant) -> None:
+    response = tenant.post("/facts", json={"content": "lives in London", "confidence": 0.9})
     assert response.status_code == 201
     body = response.json()
     assert body["content"] == "lives in London"
     assert body["confidence"] == 0.9
-    assert body["tenant_id"] == TENANT_A
+    assert body["tenant_id"] == tenant.id
     assert body["valid_to"] is None
     assert body["id"]
     assert body["created_at"]
 
-    fact_id = body["id"]
-    get_response = client.get(f"/facts/{fact_id}", headers=_headers(TENANT_A))
+    get_response = tenant.get(f"/facts/{body['id']}")
     assert get_response.status_code == 200
-    assert get_response.json()["id"] == fact_id
+    assert get_response.json()["id"] == body["id"]
 
 
-def test_list_facts_scoped_to_tenant() -> None:
-    client.post(
-        "/facts", json={"content": "fact one", "confidence": 0.5}, headers=_headers(TENANT_A)
-    )
-    response = client.get("/facts", headers=_headers(TENANT_A))
+def test_list_facts_scoped_to_tenant(tenant) -> None:
+    tenant.post("/facts", json={"content": "fact one", "confidence": 0.5})
+    response = tenant.get("/facts")
     assert response.status_code == 200
     facts = response.json()
-    assert len(facts) >= 1
-    assert all(fact["tenant_id"] == TENANT_A for fact in facts)
+    assert len(facts) == 1
+    assert facts[0]["tenant_id"] == tenant.id
 
 
-def test_fact_invisible_to_other_tenant() -> None:
-    create_response = client.post(
-        "/facts", json={"content": "tenant A only", "confidence": 0.8}, headers=_headers(TENANT_A)
-    )
-    fact_id = create_response.json()["id"]
+def test_fact_invisible_to_other_tenant(tenant, other_tenant) -> None:
+    fact = tenant.post("/facts", json={"content": "first tenant only", "confidence": 0.8}).json()
 
-    other_tenant_get = client.get(f"/facts/{fact_id}", headers=_headers(TENANT_B))
-    assert other_tenant_get.status_code == 404
-
-    other_tenant_list = client.get("/facts", headers=_headers(TENANT_B))
-    assert all(fact["id"] != fact_id for fact in other_tenant_list.json())
+    assert other_tenant.get(f"/facts/{fact['id']}").status_code == 404
+    assert other_tenant.get("/facts").json() == []
 
 
-def test_delete_fact() -> None:
-    create_response = client.post(
-        "/facts", json={"content": "to be deleted", "confidence": 0.5}, headers=_headers(TENANT_A)
-    )
-    fact_id = create_response.json()["id"]
+def test_delete_fact(tenant) -> None:
+    fact = tenant.post("/facts", json={"content": "to be deleted", "confidence": 0.5}).json()
 
-    delete_response = client.delete(f"/facts/{fact_id}", headers=_headers(TENANT_A))
-    assert delete_response.status_code == 204
-
-    get_response = client.get(f"/facts/{fact_id}", headers=_headers(TENANT_A))
-    assert get_response.status_code == 404
+    assert tenant.delete(f"/facts/{fact['id']}").status_code == 204
+    assert tenant.get(f"/facts/{fact['id']}").status_code == 404
 
 
-def test_create_fact_rejects_out_of_range_confidence() -> None:
-    response = client.post(
-        "/facts",
-        json={"content": "bad confidence", "confidence": 1.5},
-        headers=_headers(TENANT_A),
-    )
+def test_create_fact_rejects_out_of_range_confidence(tenant) -> None:
+    response = tenant.post("/facts", json={"content": "bad confidence", "confidence": 1.5})
     assert response.status_code == 422
 
 
-def test_facts_require_tenant_header() -> None:
+def test_facts_require_tenant_header(client) -> None:
     response = client.get("/facts/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 422
 
 
-def test_create_fact_with_backdated_valid_from() -> None:
-    response = client.post(
+def test_create_fact_with_backdated_valid_from(tenant) -> None:
+    response = tenant.post(
         "/facts",
         json={
             "content": "lives in Lisbon",
             "confidence": 0.9,
             "valid_from": "2024-09-01T00:00:00Z",
         },
-        headers=_headers(TENANT_A),
     )
     assert response.status_code == 201
     assert response.json()["valid_from"] == "2024-09-01T00:00:00Z"

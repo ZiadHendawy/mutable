@@ -6,14 +6,10 @@ class Settings(BaseSettings):
 
     # Restricted, non-superuser role — what the running API connects as.
     # RLS policies apply to this role; it can't bypass them.
-    database_url: str = (
-        "postgresql+psycopg://memory_engine_app:memory_engine_app@localhost:5432/memory_engine"
-    )
+    database_url: str = "postgresql+psycopg://mutable_app:mutable_app@localhost:5432/mutable"
 
     # Superuser role — migrations only (needs DDL rights RLS doesn't restrict anyway).
-    admin_database_url: str = (
-        "postgresql+psycopg://memory_engine:memory_engine@localhost:5432/memory_engine"
-    )
+    admin_database_url: str = "postgresql+psycopg://mutable:mutable@localhost:5432/mutable"
 
 
 settings = Settings()

@@ -1,9 +1,7 @@
 import dataclasses
 
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from eval.check_isolation import check_isolation
 from eval.check_supersede import check_supersede
 from eval.report import format_report
@@ -11,11 +9,9 @@ from eval.run_eval import evaluate
 from eval.score_retrieval import Retrieved
 from eval.write_data import WrittenPersona, write_all
 
-client = TestClient(app)
-
 
 @pytest.fixture(scope="module")
-def tenants() -> list[WrittenPersona]:
+def tenants(client) -> list[WrittenPersona]:
     # Shared by the read-only tests; tests that mutate state write their own.
     return write_all(client)
 
@@ -42,7 +38,7 @@ def _jonas_id(tenants, key):
     return next(t for t in tenants if t.name == "jonas").ids[key]
 
 
-def test_clean_run_passes_gates_with_no_search(tenants) -> None:
+def test_clean_run_passes_gates_with_no_search(client, tenants) -> None:
     report = evaluate(client, tenants)
 
     assert report.isolation_leaks == []
@@ -55,7 +51,7 @@ def test_clean_run_passes_gates_with_no_search(tenants) -> None:
     assert not report.passed(require_retrieval=True)
 
 
-def test_oracle_retriever_scores_perfectly(tenants) -> None:
+def test_oracle_retriever_scores_perfectly(client, tenants) -> None:
     oracle = _retriever(lambda maya, q: (q.expected, maya.persona.expected_route(q)))
     report = evaluate(client, tenants, lambda *a: oracle(tenants, *a))
 
@@ -65,7 +61,7 @@ def test_oracle_retriever_scores_perfectly(tenants) -> None:
     assert "Routing accuracy: 1.00" in format_report(report)
 
 
-def test_leaked_result_fails_the_gate(tenants) -> None:
+def test_leaked_result_fails_the_gate(client, tenants) -> None:
     leaky = _retriever(lambda maya, q: ([*q.expected, "jonas.fact.lives_in_munich"], None))
     report = evaluate(client, tenants, lambda *a: leaky(tenants, *a))
 
@@ -76,7 +72,7 @@ def test_leaked_result_fails_the_gate(tenants) -> None:
     assert "h001  LEAKED:   jonas.fact.lives_in_munich" in text
 
 
-def test_heldout_is_gated_but_never_itemized(tenants) -> None:
+def test_heldout_is_gated_but_never_itemized(client, tenants) -> None:
     maya = _maya(tenants)
     main_only = _retriever(
         lambda maya, q: (q.expected if q.id.startswith("q") else [], maya.persona.expected_route(q))
@@ -97,7 +93,7 @@ def test_heldout_is_gated_but_never_itemized(tenants) -> None:
         assert all(key not in text for key in q.expected)
 
 
-def test_excluded_record_in_results_fails_question(tenants) -> None:
+def test_excluded_record_in_results_fails_question(client, tenants) -> None:
     stale = _retriever(lambda maya, q: ([*q.expected, *q.must_exclude], None))
     report = evaluate(client, tenants, lambda *a: stale(tenants, *a))
 
@@ -108,7 +104,7 @@ def test_excluded_record_in_results_fails_question(tenants) -> None:
     assert q001.recall == 1.0
 
 
-def test_supersede_check_catches_a_closed_current_preference() -> None:
+def test_supersede_check_catches_a_closed_current_preference(client) -> None:
     maya = _maya(write_all(client, ["maya"]))
     # Close the current diet preference behind the data files' back.
     client.post(
@@ -127,7 +123,7 @@ def test_supersede_check_catches_a_closed_current_preference() -> None:
     assert "maya: q001: expected maya.pref.diet.v2 is not current" in failures
 
 
-def test_isolation_check_catches_a_shared_tenant(tenants) -> None:
+def test_isolation_check_catches_a_shared_tenant(client, tenants) -> None:
     maya = _maya(tenants)
     # An "other" tenant that is secretly the same tenant must see everything.
     impostor = dataclasses.replace(maya, name="impostor")

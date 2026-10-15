@@ -1,7 +1,7 @@
 """enable row-level security
 
-Revision ID: 41752e304b66
-Revises: c6754f9c024c
+Revision ID: 0007
+Revises: 0006
 Create Date: 2026-08-29 07:44:40.200793
 
 """
@@ -11,8 +11,8 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '41752e304b66'
-down_revision: str | None = 'c6754f9c024c'
+revision: str = "0007"
+down_revision: str | None = "0006"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
