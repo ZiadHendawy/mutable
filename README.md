@@ -84,7 +84,7 @@ Milestones 1–3 are done. Milestone 4, search, is in progress.
 | 11 | Documents | Ask about whole documents, not just short statements | |
 | 12 | Agent actions | The assistant acts on what it knows, with an audit trail | |
 
-Every milestone in full, including how each one is checked: [docs/roadmap.md](docs/roadmap.md).
+Every milestone, how each one is checked, and the steps of milestone 4: [design overview, section 2](docs/design.md#2-roadmap).
 
 **Built with:** Python, FastAPI, PostgreSQL (with Row-Level Security and pgvector), SQLAlchemy, Alembic, Docker Compose, GitHub Actions.
 
@@ -126,14 +126,18 @@ Interactive API docs are at `localhost:8000/docs` while the API runs.
 | `migrations/` | The database's history, numbered `0001`–`0007` in the order they run |
 | `eval/` | The eval: Maya's and Jonas's data files, and one Python module per step |
 | `tests/` | Tests that run against a real Postgres, so the real isolation rules are what get tested |
-| `docs/` | The detail behind this page |
+| `docs/design.md` | The design overview: architecture, roadmap, evaluation, gaps |
 
 ## Learn more
 
-- **[docs/architecture.md](docs/architecture.md):** what happens during a request, how isolation works, the data model, the stack and why each piece was chosen, and known gaps
-- **[docs/eval.md](docs/eval.md):** how the eval works step by step, and what each score means
-- **[docs/roadmap.md](docs/roadmap.md):** every milestone, what it ships, and how it's checked
-- **[eval/personas.md](eval/personas.md):** who Maya and Jonas are, and why their data is shaped the way it is
+**[docs/design.md](docs/design.md)**, the design overview, in four parts:
+
+1. **[Architecture](docs/design.md#1-architecture):** the memory model, isolation, one request step by step, key decisions
+2. **[Roadmap](docs/design.md#2-roadmap):** every milestone and how it's checked, and the steps of milestone 4
+3. **[Evaluation](docs/design.md#3-evaluation):** how the eval proves Mutable remembers correctly
+4. **[Gaps and open problems](docs/design.md#4-gaps-and-open-problems):** what doesn't work yet, including coexisting preferences and reliable LLM updates, and the plan for each
+
+Also: **[eval/personas.md](eval/personas.md)**, who Maya and Jonas are and why their data is shaped the way it is.
 
 ## Glossary
 
