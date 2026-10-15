@@ -1,27 +1,26 @@
+import dataclasses
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from eval.run_eval import (
-    EvalTenant,
-    Retrieved,
-    check_isolation,
-    check_supersede,
-    evaluate,
-    format_report,
-    write_all,
-)
+from eval.check_isolation import check_isolation
+from eval.check_supersede import check_supersede
+from eval.report import format_report
+from eval.run_eval import evaluate
+from eval.score_retrieval import Retrieved
+from eval.write_data import WrittenPersona, write_all
 
 client = TestClient(app)
 
 
 @pytest.fixture(scope="module")
-def tenants() -> list[EvalTenant]:
+def tenants() -> list[WrittenPersona]:
     # Shared by the read-only tests; tests that mutate state write their own.
     return write_all(client)
 
 
-def _maya(tenants: list[EvalTenant]) -> EvalTenant:
+def _maya(tenants: list[WrittenPersona]) -> WrittenPersona:
     return next(t for t in tenants if t.name == "maya")
 
 
@@ -33,14 +32,14 @@ def _retriever(pick):
         questions = [*maya.persona.questions, *maya.persona.heldout]
         question = next(q for q in questions if q.question == text)
         keys, route = pick(maya, question)
-        ids = [maya.written.ids.get(k) or _jonas_id(tenants, k) for k in keys]
+        ids = [maya.ids.get(k) or _jonas_id(tenants, k) for k in keys]
         return Retrieved(ids=ids, route=route)
 
     return retrieve
 
 
 def _jonas_id(tenants, key):
-    return next(t for t in tenants if t.name == "jonas").written.ids[key]
+    return next(t for t in tenants if t.name == "jonas").ids[key]
 
 
 def test_clean_run_passes_gates_with_no_search(tenants) -> None:
@@ -118,7 +117,7 @@ def test_supersede_check_catches_a_closed_current_preference() -> None:
             "content": "vegan",
             "confidence": 0.9,
             "strength": 0.9,
-            "supersedes": str(maya.written.ids["maya.pref.diet.v2"]),
+            "supersedes": str(maya.ids["maya.pref.diet.v2"]),
         },
         headers=maya.headers,
     )
@@ -131,7 +130,7 @@ def test_supersede_check_catches_a_closed_current_preference() -> None:
 def test_isolation_check_catches_a_shared_tenant(tenants) -> None:
     maya = _maya(tenants)
     # An "other" tenant that is secretly the same tenant must see everything.
-    impostor = EvalTenant("impostor", maya.persona, maya.written)
+    impostor = dataclasses.replace(maya, name="impostor")
     leaks, _ = check_isolation(client, [maya, impostor])
 
     assert leaks

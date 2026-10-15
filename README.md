@@ -359,7 +359,7 @@ classDiagram
     _Record <|-- EpisodeRecord
 ```
 
-**Part 2 — what a run produces** (`write_data.py`, `run_eval.py`):
+**Part 2 — what a run produces** (`write_data.py`, `score_retrieval.py`, `report.py`):
 
 ```mermaid
 classDiagram
@@ -367,12 +367,9 @@ classDiagram
 
     class WrittenPersona {
         <<dataclass>>
+        name, persona
         tenant_id
         ids: key to UUID
-    }
-    class EvalTenant {
-        <<dataclass>>
-        name, persona, written
     }
     class Retrieved {
         <<dataclass>>
@@ -393,9 +390,8 @@ classDiagram
         passed()
     }
 
-    EvalTenant --> Persona : the data files
-    EvalTenant --> WrittenPersona : what writing returned
-    Report o-- EvalTenant
+    WrittenPersona --> Persona : the data files
+    Report o-- WrittenPersona
     Report o-- QuestionResult : one per question
     QuestionResult --> Question : scored against
     QuestionResult ..> Retrieved : scored from
@@ -457,7 +453,9 @@ The eval report is also written to the run's summary page, readable from the PR'
 | `tests/` | API tests per type, the direct-Postgres isolation test, read_data / write_data / run_eval tests |
 | `eval/personas.md` | Design doc for the two fictional users |
 | `eval/data/` | The data: records, questions with their expected answers, and held-out questions per persona |
-| `eval/read_data.py` · `write_data.py` · `run_eval.py` | Read and validate the files → write them into the app → score |
+| `eval/read_data.py` · `write_data.py` | Read and validate the files → write them into the app |
+| `eval/check_isolation.py` · `check_supersede.py` · `score_retrieval.py` · `report.py` | One file per check, then the report |
+| `eval/run_eval.py` | Runs the steps above in order |
 | `Dockerfile` · `docker-compose.yml` | The two containers |
 | `.github/workflows/ci.yml` | The CI pipeline above |
 
