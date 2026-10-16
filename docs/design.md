@@ -478,10 +478,10 @@ Every file, class and framework, for engineers working on the code. Sections 1�
 mutable/
 ├── app/                          the API
 │   ├── main.py                   creates the FastAPI app; /health, /health/db, /whoami
-│   ├── config.py                 Settings: the two database URLs
+│   ├── settings.py               Settings: the two database URLs
 │   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
-│   ├── models.py                 SQLAlchemy table classes
-│   ├── schemas.py                Pydantic request and response classes
+│   ├── tables.py                 SQLAlchemy table classes
+│   ├── api_types.py              Pydantic request and response classes
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -549,8 +549,8 @@ flowchart TB
 | **FastAPI** | 0.141 | ≥ 0.115 | `app/` | Routing, request parsing, dependencies (`Depends`), API docs at `/docs` |
 | **Starlette** | 1.7 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
 | **uvicorn** | 0.54 | ≥ 0.32 | Dockerfile, CI | The web server that runs the app |
-| **Pydantic** | 2.13 | via FastAPI | `app/schemas.py`, `eval/read_data.py` | Data checking from type hints |
-| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
+| **Pydantic** | 2.13 | via FastAPI | `app/api_types.py`, `eval/read_data.py` | Data checking from type hints |
+| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/settings.py` | Settings from environment variables or `.env` |
 | **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
 | **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
 | **Alembic** | 1.20 | ≥ 1.13 | `migrations/` | Numbered schema migrations |
@@ -571,18 +571,18 @@ The platform:
 
 ### 5.3 How the modules depend on each other
 
-**The API, and the migrations that share its models:**
+**The API, and the migrations that share its table classes:**
 
 ```mermaid
 flowchart LR
     main["main.py"] --> routers["routers/<br/>facts · preferences · episodes"]
     main --> dbmod["db.py"]
     routers --> dbmod
-    routers --> models["models.py"]
-    routers --> schemas["schemas.py"]
-    dbmod --> config["config.py"]
-    env["migrations/env.py"] --> config
-    env --> models
+    routers --> tables["tables.py"]
+    routers --> apitypes["api_types.py"]
+    dbmod --> settingsmod["settings.py"]
+    env["migrations/env.py"] --> settingsmod
+    env --> tables
 ```
 
 **The eval, from the entry point down to the data files:**
@@ -608,7 +608,7 @@ flowchart TB
 
 ### 5.4 The API (`app/`)
 
-#### Configuration: `config.py`
+#### Configuration: `settings.py`
 
 `Settings`, a pydantic-settings `BaseSettings`, has two fields. Values come from environment variables first, then `.env`, then these defaults:
 
@@ -721,7 +721,7 @@ flowchart LR
 
 The new row is inserted *before* the supersede checks run, so its id and `valid_from` (which defaults to "now") are known. If any check fails, the whole transaction rolls back, and nothing is saved.
 
-#### Table classes: `models.py`
+#### Table classes: `tables.py`
 
 ```mermaid
 classDiagram
@@ -775,7 +775,7 @@ classDiagram
 
 The classes declare columns and foreign keys only, with no ORM `relationship()`, so every load is an explicit query. Ids are generated in Python (`uuid4`); timestamps default to the database's `now()`.
 
-#### Request and response classes: `schemas.py`
+#### Request and response classes: `api_types.py`
 
 ```mermaid
 classDiagram
