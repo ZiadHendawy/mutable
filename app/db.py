@@ -5,7 +5,7 @@ from fastapi import Depends, Header
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.config import settings
+from app.settings import settings
 
 engine = create_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)

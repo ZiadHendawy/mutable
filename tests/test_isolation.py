@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, text
 
-from app.config import settings
+from app.settings import settings
 
 TABLES = ("memory_facts", "memory_preferences", "memory_episodes")
 

@@ -478,7 +478,7 @@ Every file, class and framework, for engineers working on the code. Sections 1�
 mutable/
 ├── app/                          the API
 │   ├── main.py                   creates the FastAPI app; /health, /health/db, /whoami
-│   ├── config.py                 Settings: the two database URLs
+│   ├── settings.py               Settings: the two database URLs
 │   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
 │   ├── tables.py                 SQLAlchemy table classes
 │   ├── api_types.py              Pydantic request and response classes
@@ -550,7 +550,7 @@ flowchart TB
 | **Starlette** | 1.7 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
 | **uvicorn** | 0.54 | ≥ 0.32 | Dockerfile, CI | The web server that runs the app |
 | **Pydantic** | 2.13 | via FastAPI | `app/api_types.py`, `eval/read_data.py` | Data checking from type hints |
-| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
+| **pydantic-settings** | 2.15 | ≥ 2.5 | `app/settings.py` | Settings from environment variables or `.env` |
 | **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
 | **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
 | **Alembic** | 1.20 | ≥ 1.13 | `migrations/` | Numbered schema migrations |
@@ -580,8 +580,8 @@ flowchart LR
     routers --> dbmod
     routers --> tables["tables.py"]
     routers --> apitypes["api_types.py"]
-    dbmod --> config["config.py"]
-    env["migrations/env.py"] --> config
+    dbmod --> settingsmod["settings.py"]
+    env["migrations/env.py"] --> settingsmod
     env --> tables
 ```
 
@@ -608,7 +608,7 @@ flowchart TB
 
 ### 5.4 The API (`app/`)
 
-#### Configuration: `config.py`
+#### Configuration: `settings.py`
 
 `Settings`, a pydantic-settings `BaseSettings`, has two fields. Values come from environment variables first, then `.env`, then these defaults:
 

@@ -7,7 +7,7 @@ from sqlalchemy import engine_from_config, pool
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.config import settings  # noqa: E402
+from app.settings import settings  # noqa: E402
 from app.tables import Base  # noqa: E402
 
 config = context.config
