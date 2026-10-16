@@ -8,7 +8,7 @@ Maya was vegetarian for nine years. In May 2025 she started eating fish.
 
 An assistant booking her a dinner needs to know she's **pescatarian now**, and must never treat "vegetarian" as current. But "was Maya vegetarian in 2023?" still has a true answer: yes.
 
-Most memory systems get one of these wrong. Either they overwrite the old answer and lose the history, or they keep both and can't tell which one is true today. Mutable keeps every version and always knows which one is current.
+A simple memory store gets one of these wrong. Either it overwrites the old answer and lose the history, or it keeps both and can't tell which one is true today. Mutable keeps every version and always knows which one is current.
 
 ## How it works: three ideas
 
@@ -54,7 +54,7 @@ An **eval** tests Mutable on every pull request, like an exam with an answer key
 - The eval checks three things:
   - Jonas can never see Maya's memories, and Maya can never see his.
   - Preference history is stored correctly.
-  - Search answers the questions well. This part starts in milestone 4.
+  - How well search answers the questions. This is scored today, but search itself arrives in milestone 4, so the score is 0 for now.
 
 ```mermaid
 flowchart LR
@@ -67,7 +67,7 @@ flowchart LR
 
 ## Status
 
-Milestones 1–3 are done. Milestone 4, search, is in progress.
+Milestones 1–3 are done. Milestone 4, search, has started: step 1 of its 10 steps is done.
 
 | # | Milestone | What it means for the user | |
 |---|---|---|---|
