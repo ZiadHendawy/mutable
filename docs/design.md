@@ -11,7 +11,7 @@ Mutable does four things to make that work:
 - It walls off each user's memories inside the database itself.
 - It grades itself against a fixed exam on every change.
 
-**Status, October 2026.** Storage, isolation and the eval are built and tested (milestones 1–3). Search, the part that recalls memories, is being built now (milestone 4).
+**Status, October 2026.** Storage, isolation and the eval are built and tested (milestones 1–3). Search, the part that recalls memories, is milestone 4: step 1 of its 10 steps is done.
 
 | Section | |
 |---|---|
@@ -196,7 +196,7 @@ Each milestone ships something that runs and can be checked on its own.
 
 **Goal.** Before the assistant answers or acts ("book me dinner on Friday"), it asks its memory a plain question ("what should I know about Maya's food?"). It should get back the right records (pescatarian, shellfish allergy, dislikes cilantro) and never the outdated "vegetarian".
 
-**Design.**
+**Planned design** (none of this is built yet):
 
 - `/search` returns ranked records, not prose; prose answers are milestone 9.
 - Each record's meaning is turned into a vector when it's written.
@@ -246,6 +246,7 @@ Each question lists the records a correct answer must include, and sometimes the
 ```yaml
 - id: q001
   question: What's Maya's diet these days?
+  category: preference_current         # one of the six categories below
   expected: [maya.pref.diet.v2]        # "Is pescatarian": must be in the top 5
   must_exclude: [maya.pref.diet.v1]    # "Is vegetarian": must not appear at all
 ```
@@ -269,7 +270,7 @@ Each question lists the records a correct answer must include, and sometimes the
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
 | **Recall@5** | The share of expected records found in the top 5 results | 0.00 (no search yet) |
 | **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.00 (no search yet) |
-| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | — |
+| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 0 (no search yet) |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
 
@@ -305,7 +306,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-is-not-built-yet) | Search is not built yet | High | Milestone 4, in progress | Milestone 4 |
+| [4.9](#49-search-is-not-built-yet) | Search is not built yet | High | Milestone 4 (step 1 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 

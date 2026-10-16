@@ -4,7 +4,7 @@ Design doc for the eval data: who the two personas are and why the data is shape
 is. The records themselves live in `eval/data/<persona>/`. Both personas are entirely fictional
 — no real personal data, per the eval's design ([design overview, section 3](../docs/design.md#3-evaluation)).
 
-## Tenant A — Maya Chen
+## Maya Chen: the rich persona
 
 The rich persona: 100 records across facts/preferences/episodes, and all 75 questions. 31, grew up in Toronto, moved to Lisbon 2 years ago. Senior Product
 Designer at a fintech startup ("Nordic Pay"), degree in HCI from University of Toronto.
@@ -134,7 +134,7 @@ Written before any search code existed, and built to generalize rather than repe
 - Current-preference questions carry no "now" or "still", so current has to be the default
   rather than a keyword match.
 
-## Tenant B — Jonas Weber
+## Jonas Weber: the isolation-only persona
 
 The light persona: 28 records, isolation probes only, no questions. His *content* is
 unrelated to Maya's in every dimension — different city, job, age, life details — so a leak
