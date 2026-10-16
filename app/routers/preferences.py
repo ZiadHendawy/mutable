@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api_types import MemoryPreferenceCreate, MemoryPreferenceRead
 from app.db import TENANT_DB, get_tenant_id
-from app.models import MemoryPreference
-from app.schemas import MemoryPreferenceCreate, MemoryPreferenceRead
+from app.tables import MemoryPreference
 
 router = APIRouter(prefix="/preferences", tags=["preferences"])
 

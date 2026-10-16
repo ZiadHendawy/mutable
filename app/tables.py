@@ -1,3 +1,5 @@
+"""The database tables as SQLAlchemy classes: columns and foreign keys only."""
+
 import uuid
 from datetime import datetime
 

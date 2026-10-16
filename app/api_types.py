@@ -1,3 +1,5 @@
+"""The API's request and response bodies: what each endpoint accepts and returns."""
+
 import uuid
 from datetime import datetime
 from typing import Self

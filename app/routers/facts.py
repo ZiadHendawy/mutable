@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api_types import MemoryFactCreate, MemoryFactRead
 from app.db import TENANT_DB, get_tenant_id
-from app.models import MemoryFact
-from app.schemas import MemoryFactCreate, MemoryFactRead
+from app.tables import MemoryFact
 
 router = APIRouter(prefix="/facts", tags=["facts"])
 

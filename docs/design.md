@@ -480,8 +480,8 @@ mutable/
 │   ├── main.py                   creates the FastAPI app; /health, /health/db, /whoami
 │   ├── config.py                 Settings: the two database URLs
 │   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
-│   ├── models.py                 SQLAlchemy table classes
-│   ├── schemas.py                Pydantic request and response classes
+│   ├── tables.py                 SQLAlchemy table classes
+│   ├── api_types.py              Pydantic request and response classes
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -549,7 +549,7 @@ flowchart TB
 | **FastAPI** | 0.141 | ≥ 0.115 | `app/` | Routing, request parsing, dependencies (`Depends`), API docs at `/docs` |
 | **Starlette** | 1.7 | via FastAPI | `app/`, `tests/` | The web toolkit under FastAPI; its `TestClient` drives the tests |
 | **uvicorn** | 0.54 | ≥ 0.32 | Dockerfile, CI | The web server that runs the app |
-| **Pydantic** | 2.13 | via FastAPI | `app/schemas.py`, `eval/read_data.py` | Data checking from type hints |
+| **Pydantic** | 2.13 | via FastAPI | `app/api_types.py`, `eval/read_data.py` | Data checking from type hints |
 | **pydantic-settings** | 2.15 | ≥ 2.5 | `app/config.py` | Settings from environment variables or `.env` |
 | **SQLAlchemy** | 2.1 | ≥ 2.0 | `app/`, `migrations/`, `tests/` | Table classes, sessions, transactions |
 | **psycopg** | 3.3 | ≥ 3.2 | via SQLAlchemy | The Postgres driver (`postgresql+psycopg://` URLs) |
@@ -571,18 +571,18 @@ The platform:
 
 ### 5.3 How the modules depend on each other
 
-**The API, and the migrations that share its models:**
+**The API, and the migrations that share its table classes:**
 
 ```mermaid
 flowchart LR
     main["main.py"] --> routers["routers/<br/>facts · preferences · episodes"]
     main --> dbmod["db.py"]
     routers --> dbmod
-    routers --> models["models.py"]
-    routers --> schemas["schemas.py"]
+    routers --> tables["tables.py"]
+    routers --> apitypes["api_types.py"]
     dbmod --> config["config.py"]
     env["migrations/env.py"] --> config
-    env --> models
+    env --> tables
 ```
 
 **The eval, from the entry point down to the data files:**
@@ -721,7 +721,7 @@ flowchart LR
 
 The new row is inserted *before* the supersede checks run, so its id and `valid_from` (which defaults to "now") are known. If any check fails, the whole transaction rolls back, and nothing is saved.
 
-#### Table classes: `models.py`
+#### Table classes: `tables.py`
 
 ```mermaid
 classDiagram
@@ -775,7 +775,7 @@ classDiagram
 
 The classes declare columns and foreign keys only, with no ORM `relationship()`, so every load is an explicit query. Ids are generated in Python (`uuid4`); timestamps default to the database's `now()`.
 
-#### Request and response classes: `schemas.py`
+#### Request and response classes: `api_types.py`
 
 ```mermaid
 classDiagram
