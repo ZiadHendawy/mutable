@@ -163,7 +163,7 @@ Three details make this safe:
 
 | Tool | Role |
 |---|---|
-| **FastAPI + Pydantic** | The HTTP API. Requests are checked against typed schemas, and the tenant is attached to every request. |
+| **FastAPI + Pydantic** | The HTTP API. Requests are checked against typed request classes (`app/api_types.py`), and the tenant is attached to every request. |
 | **PostgreSQL 16** | Storage, constraints, Row-Level Security |
 | **pgvector** | Vector search inside Postgres, used from milestone 4 |
 | **SQLAlchemy + Alembic** | Tables as Python classes; numbered migrations `0001`–`0007` |
@@ -857,7 +857,7 @@ CREATE POLICY tenant_isolation ON memory_facts
 
 **Alembic's setup:**
 
-- **`migrations/env.py`** connects with `settings.admin_database_url`, the superuser, and points autogenerate at `Base.metadata`. `alembic check` confirms the models and migrations agree. It uses no connection pool, and supports an offline mode that only prints the SQL.
+- **`migrations/env.py`** connects with `settings.admin_database_url`, the superuser, and points autogenerate at `Base.metadata`. `alembic check` confirms the table classes and migrations agree. It uses no connection pool, and supports an offline mode that only prints the SQL.
 - **`alembic.ini`** holds the folder location and logging, and notes how to number the next migration: `--rev-id 0008`.
 - **`script.py.mako`** is the template for new migration files.
 
