@@ -127,6 +127,7 @@ Interactive API docs are at `localhost:8000/docs` while the API runs.
 | `eval/` | The eval: Maya's and Jonas's data files, and one Python module per step |
 | `tests/` | Tests that run against a real Postgres, so the real isolation rules are what get tested |
 | `docs/design.md` | The design overview: architecture, roadmap, evaluation, gaps, code reference |
+| `local/` | Your own files, kept on this machine only: ignored by git and left out of the Docker image |
 
 ## Learn more
 
