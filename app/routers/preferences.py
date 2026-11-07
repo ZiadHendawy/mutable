@@ -26,7 +26,9 @@ def create_preference(
     db.refresh(preference)
 
     if payload.supersedes is not None:
-        old = db.get(MemoryPreference, payload.supersedes)
+        # FOR UPDATE: lock the old row until this transaction commits. A concurrent
+        # supersede waits here, then reads our committed close and gets the 409.
+        old = db.get(MemoryPreference, payload.supersedes, with_for_update=True)
         if old is None:
             raise HTTPException(status_code=404, detail="Preference to supersede not found")
         if old.valid_to is not None:

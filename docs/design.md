@@ -721,6 +721,8 @@ flowchart LR
 
 The new row is inserted *before* the supersede checks run, so its id and `valid_from` (which defaults to "now") are known. If any check fails, the whole transaction rolls back, and nothing is saved.
 
+**Two supersedes at once.** The old row is read with `SELECT … FOR UPDATE`, which locks it until the transaction commits or rolls back. A second request that supersedes the same row waits at that read. When the first commits, the second reads the row as now closed and gets the 409. Without the lock, both requests saw the row as open and both closed it: two versions ended up current, and the second overwrote the first one's `superseded_by` (a lost update). The lock is in Postgres, not in Python, so it holds across any number of app processes.
+
 #### Table classes: `tables.py`
 
 ```mermaid
@@ -1078,7 +1080,7 @@ flowchart LR
 
 The tests follow three principles:
 
-- **Everything runs against the real Postgres, with no mocks.** The real constraints and Row-Level Security get tested. The one exception is `test_transactions.py`, which patches `Session.commit` to fail on purpose.
+- **Everything runs against the real Postgres, with no mocks.** The real constraints and Row-Level Security get tested. Two tests patch SQLAlchemy on purpose: `test_transactions.py` makes `Session.commit` fail, and `test_concurrency.py` pauses `Session.get` so two requests overlap.
 - **Each test gets a brand-new tenant,** so tests can't see each other's rows, even across runs against the same database.
 - **`TestClient` calls the app in-process**, with no server running, and doubles as the HTTP client for the eval code.
 
@@ -1091,6 +1093,7 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
+| `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
 | `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
 | `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check |
