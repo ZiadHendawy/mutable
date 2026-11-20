@@ -12,9 +12,9 @@ One module per step, in the order they run:
     report.py           totals, pass/fail, and the printed table
 
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
-is scored by asking the app's GET /search; its metrics are reported against the bars in
-docs/design.md but only gate the run with --require-retrieval, until search reaches them
-(milestone 4, step 10).
+is scored by asking the app's GET /search, and its metrics are reported against the bars in
+docs/design.md. With --require-retrieval, as CI runs it, missing a bar fails the run too;
+without it, they're only reported, which suits trying things out locally.
 
 Held-out questions are scored exactly like the main set but reported only as totals, never
 question by question, so search can't be tuned against them. --require-retrieval holds both
