@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from sqlalchemy import text
 
 from app.db import SessionLocal
-from app.search import RRF_K, Hit, fuse, text_search
+from app.search import RRF_K, Hit, fuse, shared_ranks, text_search
 
 
 def _session_for(tenant):
@@ -53,9 +53,12 @@ def test_text_search_with_no_searchable_words_finds_nothing(tenant) -> None:
         assert text_search(db, "What is it?", 10) == []
 
 
-def _hit(n: int) -> Hit:
+def _hit(n: int, score: float | None = None) -> Hit:
+    """A made-up hit. Unless given a score, each gets its own, so there are no ties."""
     when = datetime(2026, 1, 1, tzinfo=UTC)
-    return Hit(uuid.UUID(int=n), "fact", f"record {n}", 0.0, when, None, None)
+    return Hit(
+        uuid.UUID(int=n), "fact", f"record {n}", -n if score is None else score, when, None, None
+    )
 
 
 def test_fuse_favors_records_both_rankings_found() -> None:
@@ -74,7 +77,24 @@ def test_fuse_weights_each_ranking() -> None:
     assert fused[1].score == 0.5 / (RRF_K + 1)
 
 
-def test_fuse_breaks_ties_by_id_and_cuts_at_k() -> None:
+def test_fuse_cuts_at_k() -> None:
     a, b = _hit(1), _hit(2)
-    assert [h.id for h in fuse([[b], [a]], k=2, weights=[1.0, 1.0])] == [a.id, b.id]
     assert len(fuse([[a, b]], k=1, weights=[1.0])) == 1
+
+
+def test_tied_scores_share_a_rank() -> None:
+    ranking = [_hit(1, 0.9), _hit(2, 0.5), _hit(3, 0.5), _hit(4, 0.1)]
+    assert shared_ranks(ranking) == [1, 2, 2, 4]
+    assert shared_ranks([]) == []
+
+
+def test_ties_in_one_ranking_count_the_same() -> None:
+    a, b = _hit(1, 0.5), _hit(2, 0.5)
+    fused = fuse([[b, a]], k=2, weights=[1.0])
+    assert fused[0].score == fused[1].score == 1 / (RRF_K + 1)
+
+
+def test_fused_ties_go_to_the_first_rankings_order() -> None:
+    a, b = _hit(1), _hit(2)
+    # Each is 1st in one ranking, at equal weight: a tie, decided by the first ranking.
+    assert [h.id for h in fuse([[b], [a]], k=2, weights=[1.0, 1.0])] == [b.id, a.id]

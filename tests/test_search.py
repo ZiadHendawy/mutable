@@ -172,14 +172,14 @@ def _search_with_plan(tenant, q: str) -> tuple[dict, list[str]]:
 def test_a_question_about_now_gets_the_current_version(tenant) -> None:
     old, new = _diet_history(tenant)
     plan, ids = _search_with_plan(tenant, "Is she vegetarian these days?")
-    assert plan == {"time": "now", "as_of": None}
+    assert (plan["time"], plan["as_of"]) == ("now", None)
     assert new in ids and old not in ids
 
 
 def test_a_dated_question_gets_the_version_true_then(tenant) -> None:
     old, new = _diet_history(tenant)
     plan, ids = _search_with_plan(tenant, "Was she vegetarian in 2023?")
-    assert plan == {"time": "as_of", "as_of": "2023-07-01T00:00:00Z"}
+    assert (plan["time"], plan["as_of"]) == ("as_of", "2023-07-01T00:00:00Z")
     assert old in ids and new not in ids
 
 
@@ -192,7 +192,7 @@ def test_a_date_before_any_version_gets_neither(tenant) -> None:
 def test_a_history_question_gets_every_version(tenant) -> None:
     old, new = _diet_history(tenant)
     plan, ids = _search_with_plan(tenant, "How has her diet changed over time?")
-    assert plan == {"time": "history", "as_of": None}
+    assert (plan["time"], plan["as_of"]) == ("history", None)
     assert old in ids and new in ids
 
 
@@ -202,3 +202,18 @@ def test_dated_questions_still_find_episodes(tenant) -> None:
     episode = tenant.post("/episodes", json=MARATHON).json()["id"]
     _, ids = _search_with_plan(tenant, "What did she run in October 2025?")
     assert episode in ids
+
+
+def test_the_planned_types_come_first_but_nothing_is_hidden(tenant) -> None:
+    ids = _write(tenant)
+    response = tenant.get("/search", params={"q": "When did she run in Lisbon?"}).json()
+    assert response["plan"]["types"] == ["episode"]
+    results = [r["id"] for r in response["results"]]
+    # The episode first; the Lisbon fact, a different type, still comes back after it.
+    assert results[0] == ids["episode"]
+    assert ids["fact"] in results
+
+
+def test_the_plan_lists_its_types_sorted(tenant) -> None:
+    response = tenant.get("/search", params={"q": "Where does she live?"}).json()
+    assert response["plan"]["types"] == ["episode", "fact", "preference"]
