@@ -157,7 +157,7 @@ def vector_search(
 
     Each hit's score is the cosine similarity of the two vectors, from -1 to 1.
     """
-    [question_vector] = embedder.embed([question])
+    question_vector = embedder.embed_query(question)
     per_table = [
         # pgvector's <=> is cosine distance: 0 for the same direction, up to 2 for opposite
         # ones. 1 minus it is the cosine similarity.

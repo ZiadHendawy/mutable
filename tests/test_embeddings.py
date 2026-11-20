@@ -80,3 +80,18 @@ def test_local_embedder_returns_vectors_in_the_order_of_the_texts(
 def test_local_embedder_puts_related_texts_closer(local_embedder: LocalEmbedder) -> None:
     tea, green_tea, lisbon = local_embedder.embed([TEA, GREEN_TEA, LISBON])
     assert math.dist(tea, green_tea) < math.dist(tea, lisbon)
+
+
+def test_fake_embedder_embeds_a_question_like_a_record() -> None:
+    assert FakeEmbedder().embed_query(TEA) == FakeEmbedder().embed([TEA])[0]
+
+
+def test_local_embedder_puts_the_answer_closest_to_its_question(
+    local_embedder: LocalEmbedder,
+) -> None:
+    question = local_embedder.embed_query("What does she like to drink?")
+    tea, lisbon = local_embedder.embed([TEA, LISBON])
+    assert math.dist(question, tea) < math.dist(question, lisbon)
+    # The question gets bge's search prefix; the same text as a record doesn't.
+    [as_record] = local_embedder.embed(["What does she like to drink?"])
+    assert question != pytest.approx(as_record)
