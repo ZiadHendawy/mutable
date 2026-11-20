@@ -1,29 +1,65 @@
 """Search: find the memories that best answer a question.
 
-v1 (milestone 4, step 4) is vector search only. The question is embedded with the same
-model as the records, and every current record of all three types is ranked by how close
-its vector is to the question's. Row-Level Security limits the query to the caller's own
-records, so nothing here filters by tenant.
+Two rankings of the caller's current records, merged into one:
+
+- by meaning (`vector_search`): the question is embedded with the same model as the
+  records, and records are ranked by how close their vectors are to the question's
+- by words (`text_search`): Postgres full-text search, ranking records by how many of the
+  question's words they contain, and how close together. It catches what meaning misses:
+  names, places and rare words ("Theo", "Nordic Pay")
+
+`hybrid_search` merges them with Reciprocal Rank Fusion. Row-Level Security limits every
+query to the caller's own records, so nothing here filters by tenant.
 """
 
 import uuid
-from dataclasses import dataclass
+from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import DateTime, Text, cast, literal, null, select, union_all
+from sqlalchemy import (
+    ColumnElement,
+    DateTime,
+    Select,
+    Text,
+    cast,
+    func,
+    literal,
+    null,
+    select,
+    union_all,
+)
+from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.orm import Session
 
 from app.embeddings import Embedder
 from app.tables import MemoryEpisode, MemoryFact, MemoryPreference
 
 RecordType = Literal["fact", "preference", "episode"]
+Table = type[MemoryFact | MemoryPreference | MemoryEpisode]
 
-TABLES: dict[RecordType, type[MemoryFact | MemoryPreference | MemoryEpisode]] = {
+TABLES: dict[RecordType, Table] = {
     "fact": MemoryFact,
     "preference": MemoryPreference,
     "episode": MemoryEpisode,
 }
+
+# How many records each ranking contributes to the merge. Far more than k, so a record
+# ranked low by one method but high by the other still makes it in.
+CANDIDATES = 50
+
+# How much each ranking counts in the merge: meaning, then words. Words count for less: on
+# its own, full-text search finds the right record far less often than vector search, since
+# it can't tell a telling word ("Theo") from a common one ("prefers"). Its weight was
+# tuned on the main eval questions only, never the held-out ones.
+WEIGHTS = (1.0, 0.2)
+
+# Reciprocal Rank Fusion's constant. Each ranking gives a record 1 / (RRF_K + its rank), so
+# a larger constant flattens the gap between 1st and 2nd place. 60 is the value from the
+# paper that introduced RRF (Cormack et al., 2009), and the usual default.
+RRF_K = 60
 
 
 @dataclass(frozen=True)
@@ -33,55 +69,112 @@ class Hit:
     id: uuid.UUID
     type: RecordType
     content: str
-    score: float  # cosine similarity, -1 to 1; higher is closer
+    score: float  # higher is better; what it measures depends on the ranking
     valid_from: datetime
     valid_to: datetime | None
     event_time: datetime | None  # episodes only
 
 
-def vector_search(db: Session, embedder: Embedder, question: str, k: int) -> list[Hit]:
-    """The k current records whose meaning is closest to the question, best first."""
-    [question_vector] = embedder.embed([question])
+def hybrid_search(db: Session, embedder: Embedder, question: str, k: int) -> list[Hit]:
+    """The k records best matching the question by meaning and by words, best first.
 
-    # One SELECT per table, glued into one query with UNION ALL, so a single ORDER BY ranks
-    # all three types together. Each SELECT returns the same columns in the same order.
-    per_table = []
-    for record_type, table in TABLES.items():
-        # Only episodes have an event time; the others fill the column with a typed NULL.
-        event_time = (
-            table.event_time if table is MemoryEpisode else cast(null(), DateTime(timezone=True))
-        )
-        per_table.append(
-            select(
-                literal(record_type, Text).label("type"),
-                table.id,
-                table.content,
-                table.valid_from,
-                table.valid_to,
-                event_time.label("event_time"),
-                # pgvector's <=> operator: cosine distance, 0 for the same direction, up to 2
-                # for opposite ones.
-                table.embedding.cosine_distance(question_vector).label("distance"),
-            ).where(
-                # Current versions only: a superseded preference has a valid_to.
-                table.valid_to.is_(None),
-                # Rows written before migration 0008 have no vector, so can't be ranked.
-                table.embedding.is_not(None),
-            )
-        )
+    Each hit's score is its fused RRF score.
+    """
+    rankings = [
+        vector_search(db, embedder, question, CANDIDATES),
+        text_search(db, question, CANDIDATES),
+    ]
+    return fuse(rankings, k, WEIGHTS)
+
+
+def fuse(rankings: list[list[Hit]], k: int, weights: Sequence[float]) -> list[Hit]:
+    """Reciprocal Rank Fusion: merge rankings by position, not by score.
+
+    The two rankings' scores aren't comparable (a cosine similarity, a text rank), but
+    their positions are. A record gets weight / (RRF_K + rank) from each ranking it appears
+    in, and the sum orders the result. Ties go to the smaller id, so the order is stable.
+    """
+    fused: dict[uuid.UUID, float] = defaultdict(float)
+    hits: dict[uuid.UUID, Hit] = {}
+    for ranking, weight in zip(rankings, weights, strict=True):
+        for rank, hit in enumerate(ranking, start=1):
+            fused[hit.id] += weight / (RRF_K + rank)
+            hits.setdefault(hit.id, hit)
+    best = sorted(fused, key=lambda id_: (-fused[id_], id_))[:k]
+    return [replace(hits[id_], score=fused[id_]) for id_ in best]
+
+
+def vector_search(db: Session, embedder: Embedder, question: str, k: int) -> list[Hit]:
+    """The k current records whose meaning is closest to the question, best first.
+
+    Each hit's score is the cosine similarity of the two vectors, from -1 to 1.
+    """
+    [question_vector] = embedder.embed([question])
+    per_table = [
+        # pgvector's <=> is cosine distance: 0 for the same direction, up to 2 for opposite
+        # ones. 1 minus it is the cosine similarity.
+        _current(record_type, table, 1 - table.embedding.cosine_distance(question_vector))
+        # Rows written before migration 0008 have no vector, so can't be ranked.
+        .where(table.embedding.is_not(None))
+        for record_type, table in TABLES.items()
+    ]
+    return _top(db, per_table, k)
+
+
+def text_search(db: Session, question: str, k: int) -> list[Hit]:
+    """The k current records that best match the question's words, best first.
+
+    Records that share no word with the question aren't returned. Each hit's score is
+    Postgres's ts_rank_cd, which grows with the number of matching words and how close
+    together they appear.
+    """
+    query = _any_word(question)
+    per_table = [
+        _current(record_type, table, func.ts_rank_cd(table.content_words, query))
+        # @@ is "matches": the record contains at least one of the query's words.
+        .where(table.content_words.op("@@")(query))
+        for record_type, table in TABLES.items()
+    ]
+    return _top(db, per_table, k)
+
+
+def _any_word(question: str) -> ColumnElement:
+    """A full-text query matching any of the question's words.
+
+    plainto_tsquery reduces the question to its searchable words, the same way
+    content_words was made ("What's Maya's diet these days?" becomes
+    'maya' & 'diet' & 'day'), but joins them with & (all must match). A question has words
+    no record contains ("what", "Maya"), so & would match almost nothing. Swapping & for |
+    (any may match) leaves the ranking to decide which matches are best.
+    """
+    all_words = cast(func.plainto_tsquery("english", question), Text)
+    return cast(func.replace(all_words, "&", "|"), TSQUERY)
+
+
+def _current(record_type: RecordType, table: Table, score: ColumnElement) -> Select:
+    """A table's current records, as the columns every ranking returns, plus a score."""
+    # Only episodes have an event time; the others fill the column with a typed NULL, so
+    # all three SELECTs have the same columns and can be joined with UNION ALL.
+    event_time = (
+        table.event_time if table is MemoryEpisode else cast(null(), DateTime(timezone=True))
+    )
+    return select(
+        literal(record_type, Text).label("type"),
+        table.id,
+        table.content,
+        table.valid_from,
+        table.valid_to,
+        event_time.label("event_time"),
+        score.label("score"),
+    ).where(
+        # Current versions only: a superseded preference has a valid_to.
+        table.valid_to.is_(None)
+    )
+
+
+def _top(db: Session, per_table: list[Select], k: int) -> list[Hit]:
+    """Join one SELECT per table into a single query, and return its k best rows."""
     candidates = union_all(*per_table).subquery()
     # id breaks ties, so the same data always gives the same order.
-    stmt = select(candidates).order_by(candidates.c.distance, candidates.c.id).limit(k)
-
-    return [
-        Hit(
-            id=row.id,
-            type=row.type,
-            content=row.content,
-            score=1 - row.distance,
-            valid_from=row.valid_from,
-            valid_to=row.valid_to,
-            event_time=row.event_time,
-        )
-        for row in db.execute(stmt)
-    ]
+    stmt = select(candidates).order_by(candidates.c.score.desc(), candidates.c.id).limit(k)
+    return [Hit(**row._mapping) for row in db.execute(stmt)]

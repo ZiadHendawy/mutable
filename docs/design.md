@@ -223,7 +223,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 2 | Embedding model behind one interface, plus a predictable fake for tests | ✅ |
 | 3 | Store each record's vector and full-text index when it's written | ✅ |
 | 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | ✅ |
-| 5 | Hybrid search: add full-text, merge both rankings | |
+| 5 | Hybrid search: add full-text, merge both rankings | ✅ |
 | 6 | Router, time scope: now, as of a date, or full history | |
 | 7 | Router, record types: which tables to search | |
 | 8 | Episode dates: "in October 2025", "most recent" | |
@@ -278,7 +278,7 @@ Each question lists the records a correct answer must include, and sometimes the
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
 | **Recall@5** | The share of expected records found in the top 5 results | 0.80 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
 | **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.70 |
-| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 5 |
+| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 6 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
 
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 4 of 10 done) | Milestone 4 |
+| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 5 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -436,6 +436,19 @@ Memories include health details (allergies), relationships and locations. Isolat
 | After step | Recall@5 | MRR | Held-out Recall@5 / MRR | What changed |
 |---|---|---|---|---|
 | 4 | 0.80 | 0.70 | 0.82 / 0.72 | Vector search over current records. Questions about the past score 0.05: only current versions are searched |
+| 5 | 0.80 | 0.70 | 0.87 / 0.73 | Hybrid: full-text search merged in at weight 0.2. Episodes, full of names and places, reach recall 1.00 |
+
+**What was tried in step 5 and didn't help** (main questions only, before the router):
+
+| Variant | Recall@5 | MRR | Why it wasn't kept |
+|---|---|---|---|
+| Hybrid, both rankings weighted equally | 0.76 | 0.67 | Full-text search can't tell a telling word ("Theo") from a common one ("prefers"), so its noise pushed good results down |
+| A bigger embedding model, `bge-base-en-v1.5` (768 numbers) | 0.75 | 0.72 | No better, at about 3× the size and a migration |
+| A small reranker, `ms-marco-MiniLM-L-6-v2`, over the top 20 | 0.78 | 0.69 | No better, and about 200 ms per question |
+| A bigger reranker, `bge-reranker-base` | — | — | Ran out of memory in the 2 GB development VM |
+| bge's query prefix ("Represent this sentence for searching relevant passages: ") | 0.78 | 0.74 | A small MRR gain for some recall. Revisited in step 9 |
+
+Without the 10 questions about the past, which only the router can answer (step 6), vector search alone is already at about 0.91 recall and 0.80 MRR.
 
 **Known weak spots, even after milestone 4:**
 
@@ -709,7 +722,7 @@ flowchart TD
 | GET | `/episodes` | `list_episodes` | 200 | 422 | Current only, latest event first |
 | GET | `/episodes/{id}` | `get_episode` | 200 | 404 | |
 | DELETE | `/episodes/{id}` | `delete_episode` | 204 | 404 | Permanent |
-| GET | `/search?q=…&k=5` | `search` | 200 | 422 | The `k` current records closest to `q`, best first ([below](#searching-searchpy)). `k` is 1–50 |
+| GET | `/search?q=…&k=5` | `search` | 200 | 422 | The `k` current records best matching `q`, by meaning and by words, best first ([below](#searching-searchpy)). `k` is 1–50 |
 
 Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header, and returns 422 without it. Endpoints are plain `def`, not `async`, so FastAPI runs them in a thread pool.
 
@@ -913,26 +926,35 @@ flowchart TB
 
 #### Searching: `search.py`
 
-`GET /search?q=…&k=5` returns the caller's `k` records closest in meaning to the question, as `{"results": [...]}`. Each result has the record's `id`, `type`, `content`, `score`, `valid_from` and `valid_to`, plus `event_time` for episodes.
+`GET /search?q=…&k=5` returns the caller's `k` records that best match the question, as `{"results": [...]}`. Each result has the record's `id`, `type`, `content`, `score`, `valid_from` and `valid_to`, plus `event_time` for episodes.
+
+Two rankings of the caller's current records are merged into one:
 
 ```mermaid
 flowchart TD
-    q["GET /search?q=What's Maya's diet these days?"] --> embed["embed the question<br/>(the same model as the records)"]
-    embed --> sql["one query: a SELECT per table, joined by UNION ALL<br/>current versions only, rows with a vector only<br/>RLS limits it to this tenant"]
-    sql --> rank["ORDER BY embedding <=> question vector, id<br/>LIMIT k"]
-    rank --> out["results, best first<br/>score = 1 − cosine distance"]
+    q["GET /search?q=When did Theo last visit Maya?"] --> v["vector_search: by meaning<br/>embed the question, ORDER BY embedding <=> question vector<br/>top 50"]
+    q --> t["text_search: by words<br/>content_words @@ ('theo' | 'last' | 'visit' | 'maya')<br/>ORDER BY ts_rank_cd, top 50"]
+    v --> f["fuse: Reciprocal Rank Fusion<br/>each record gets weight ÷ (60 + its rank) from each ranking<br/>weights: meaning 1.0, words 0.2"]
+    t --> f
+    f --> out["top k, best first<br/>score = the fused score"]
 ```
 
 | Name | What it is |
 |---|---|
-| `vector_search(db, embedder, question, k)` | Embeds the question, then ranks every current record of all three types in one query, and returns the top `k` as `Hit`s |
+| `hybrid_search(db, embedder, question, k)` | What `/search` calls: both rankings, top 50 each (`CANDIDATES`), merged by `fuse` |
+| `vector_search(db, embedder, question, k)` | Ranks by meaning. Embeds the question, then orders every current record with a vector by cosine distance. Its `score` is the cosine similarity |
+| `text_search(db, question, k)` | Ranks by words. Postgres full-text search: records sharing at least one of the question's words, ordered by `ts_rank_cd`, which grows with how many words match and how close together they are |
+| `fuse(rankings, k, weights)` | Reciprocal Rank Fusion. Merges by position, not score, since a cosine similarity and a text rank can't be compared. Ties go to the smaller id |
+| `WEIGHTS`, `RRF_K`, `CANDIDATES` | 1.0 and 0.2 for meaning and words; 60; 50 |
 | `Hit` | One result: the record's id, type, content and dates, and its `score` |
-| `TABLES` | The record type → table class map the query is built from |
 
-- **`<=>` is pgvector's cosine distance:** 0 when two vectors point the same way, up to 2 when they're opposite. The score is 1 minus that, the cosine similarity, so higher is closer.
+- **Each ranking is one query:** a `SELECT` per table, joined with `UNION ALL`, so one `ORDER BY` ranks all three types together.
+- **The full-text query matches *any* of the question's words.** `plainto_tsquery` reduces the question to its searchable words, the same way `content_words` was made, but joins them with `&` (all must match). A question always has words no record contains, such as "Maya" here, so `text_search` swaps `&` for `|` and lets the ranking decide.
+- **Words count for less than meaning (0.2).** On its own, full-text search finds the right record far less often (0.60 recall against 0.80), because its ranking doesn't know which words are rare. The weight was tuned on the main questions only ([4.9](#49-search-doesnt-reach-its-targets-yet)).
+- **60 is RRF's usual constant,** from the paper that introduced it. A larger constant narrows the gap between 1st and 2nd place.
 - **"Current" means `valid_to IS NULL`,** so a superseded preference never comes back. Questions about the past need the router ([milestone 4, step 6](#21-now-milestone-4-search)).
-- **There's no `WHERE tenant_id`.** The query runs in the tenant's transaction (`TENANT_DB`), and Row-Level Security limits every table in it to that tenant's rows.
-- **`id` breaks ties,** so the same data always comes back in the same order.
+- **A record with no vector,** written before migration 0008, is still found by its words.
+- **There's no `WHERE tenant_id`.** The queries run in the tenant's transaction (`TENANT_DB`), and Row-Level Security limits every table to that tenant's rows.
 
 ### 5.5 The database (`migrations/`)
 
@@ -1206,7 +1228,8 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
-| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first, with its cosine score; episodes carry `event_time`; superseded versions, other tenants' records and rows with no vector are left out; `k` limits the results; bad `q` or `k` gets a 422 |
+| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422 |
+| `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, breaks ties by id and cuts at `k` |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |
 | `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
