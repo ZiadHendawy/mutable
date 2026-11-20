@@ -28,6 +28,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://mutable_app:mutable_app@localhost:5432/mutable
       ADMIN_DATABASE_URL: postgresql+psycopg://mutable:mutable@localhost:5432/mutable
+      # Where fastembed keeps the embedding model; the cache step below saves this folder.
+      FASTEMBED_CACHE_PATH: /home/runner/.cache/fastembed
 
     steps:
       - uses: actions/checkout@v4
@@ -42,13 +44,30 @@ jobs:
       - name: Lint
         run: ruff check .
 
+      # The embedding model is downloaded once and then restored from the cache on later
+      # runs. The key changes whenever app/embeddings.py does, which is where the model is named.
+      - name: Restore the embedding model
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FASTEMBED_CACHE_PATH }}
+          key: fastembed-${{ hashFiles('app/embeddings.py') }}
+
+      # Loads the model, downloading it only if the cache didn't have it. The test and API
+      # steps set HF_HUB_OFFLINE, so there a missing model fails loudly instead of downloading.
+      - name: Download the embedding model
+        run: python -c "from app.embeddings import LocalEmbedder; LocalEmbedder()"
+
       - name: Run migrations
         run: alembic upgrade head
 
       - name: Test
         run: pytest
+        env:
+          HF_HUB_OFFLINE: "1"
 
       - name: Start API
+        env:
+          HF_HUB_OFFLINE: "1"
         run: |
           nohup uvicorn app.main:app --port 8000 > uvicorn.log 2>&1 &
           for _ in $(seq 1 30); do
