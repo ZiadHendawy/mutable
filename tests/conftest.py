@@ -1,7 +1,13 @@
 """Shared test setup.
 
 Tests call the real app in-process (TestClient) against the real Postgres, so the real
-constraints and Row-Level Security are what get tested -- no mocks, no SQLite.
+constraints and Row-Level Security are what get tested -- no SQLite, and no mocks except
+the embedder.
+
+The embedder is the one stand-in. The app gets its embedder from `get_embedder`, and this
+file swaps that for `FakeEmbedder` (through `app.dependency_overrides`), so every record a
+test creates is embedded by the fake: instantly, without loading the real model, and with a
+vector the test can work out for itself. `test_embeddings.py` tests the real model directly.
 
 Every test that needs a tenant asks for the `tenant` fixture (and `other_tenant` when it
 needs two). Each is a brand-new tenant, so a test only ever sees the rows it wrote itself:
@@ -14,7 +20,12 @@ import pytest
 from fastapi.testclient import TestClient
 from httpx import Response
 
+from app.embeddings import FakeEmbedder, get_embedder
 from app.main import app
+
+# Set when pytest loads this file, before any test runs, so it also covers the TestClient
+# that test_transactions.py creates for itself.
+app.dependency_overrides[get_embedder] = FakeEmbedder
 
 
 class TenantClient:
