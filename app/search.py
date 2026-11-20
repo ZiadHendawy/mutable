@@ -61,6 +61,11 @@ CANDIDATES = 50
 # tuned on the main eval questions only, never the held-out ones.
 WEIGHTS = (1.0, 0.2)
 
+# How much the "newest first" ranking counts, when the question asks for the most recent
+# event. Less than meaning, so relevance still decides which events are candidates, and an
+# unrelated recent event can't jump to the top. Tuned on the main eval questions only.
+LATEST_WEIGHT = 0.3
+
 # Reciprocal Rank Fusion's constant. Each ranking gives a record 1 / (RRF_K + its rank), so
 # a larger constant flattens the gap between 1st and 2nd place. 60 is the value from the
 # paper that introduced RRF (Cormack et al., 2009), and the usual default.
@@ -92,7 +97,11 @@ def hybrid_search(
         vector_search(db, embedder, question, CANDIDATES, plan),
         text_search(db, question, CANDIDATES, plan),
     ]
-    fused = fuse(rankings, len(rankings) * CANDIDATES, WEIGHTS)
+    weights = list(WEIGHTS)
+    if plan.latest:
+        rankings.append(latest_episodes(db, CANDIDATES, plan))
+        weights.append(LATEST_WEIGHT)
+    fused = fuse(rankings, len(rankings) * CANDIDATES, weights)
     return planned_types_first(fused, plan.types)[:k]
 
 
@@ -177,6 +186,18 @@ def text_search(db: Session, question: str, k: int, plan: SearchPlan = NOW) -> l
     return _top(db, per_table, k)
 
 
+def latest_episodes(db: Session, k: int, plan: SearchPlan = NOW) -> list[Hit]:
+    """The k most recent episodes in scope, newest first, whatever the question says.
+
+    On its own this ranking knows nothing about the question; it's only ever merged with
+    the two that do. Each hit's score is its event time, in seconds since 1970.
+    """
+    newest = _in_scope(
+        "episode", MemoryEpisode, plan, func.extract("epoch", MemoryEpisode.event_time)
+    )
+    return _top(db, [newest], k)
+
+
 def _any_word(question: str) -> ColumnElement:
     """A full-text query matching any of the question's words.
 
@@ -216,11 +237,14 @@ def _time_filter(table: Table, plan: SearchPlan) -> list[ColumnElement]:
     """Which of a table's records the plan's time scope keeps.
 
     Episodes are events, not states that hold for a while, so "as of" a date doesn't apply
-    to them; they're only ever current or deleted. Every scope keeps all current episodes.
+    to them; they're only ever current or deleted. Instead, when the question names a
+    period ("in October 2025"), an episode must overlap it.
     """
+    if table is MemoryEpisode:
+        return _episode_filter(plan)
     if plan.time == "history":
         return []  # every version
-    if plan.time == "as_of" and table is not MemoryEpisode:
+    if plan.time == "as_of":
         # The versions whose validity window contains the date. A window ends exactly where
         # its replacement's begins, so for a changed preference exactly one version matches.
         return [
@@ -229,6 +253,20 @@ def _time_filter(table: Table, plan: SearchPlan) -> list[ColumnElement]:
         ]
     # "now": current versions only. A superseded preference has a valid_to.
     return [table.valid_to.is_(None)]
+
+
+def _episode_filter(plan: SearchPlan) -> list[ColumnElement]:
+    """Current episodes; when the question names a period, only those overlapping it."""
+    conditions = [MemoryEpisode.valid_to.is_(None)]
+    if plan.period is not None:
+        # An event overlaps the period when it starts before the period ends and ends at or
+        # after the period starts. A one-moment event has no end: it ends when it starts.
+        ends = func.coalesce(MemoryEpisode.event_time_end, MemoryEpisode.event_time)
+        conditions += [
+            MemoryEpisode.event_time < plan.period.end,
+            ends >= plan.period.start,
+        ]
+    return conditions
 
 
 def _top(db: Session, per_table: list[Select], k: int) -> list[Hit]:

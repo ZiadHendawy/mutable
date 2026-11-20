@@ -226,7 +226,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 5 | Hybrid search: add full-text, merge both rankings | ✅ |
 | 6 | Router, time scope: now, as of a date, or full history | ✅ |
 | 7 | Router, record types: which tables to search | ✅ |
-| 8 | Episode dates: "in October 2025", "most recent" | |
+| 8 | Episode dates: "in October 2025", "most recent" | ✅ |
 | 9 | Reach the score targets; check the held-out score once, at the end | |
 | 10 | Make CI fail any pull request that misses the targets | |
 
@@ -276,8 +276,8 @@ Each question lists the records a correct answer must include, and sometimes the
 |---|---|---|
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
-| **Recall@5** | The share of expected records found in the top 5 results | 0.92 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.79 |
+| **Recall@5** | The share of expected records found in the top 5 results | 0.94 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
+| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.82 |
 | **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 2 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 7 of 10 done) | Milestone 4 |
+| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 8 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -439,6 +439,7 @@ Memories include health details (allergies), relationships and locations. Isolat
 | 5 | 0.80 | 0.70 | 0.87 / 0.73 | Hybrid: full-text search merged in at weight 0.2. Episodes, full of names and places, reach recall 1.00 |
 | 6 | 0.92 | 0.78 | 0.98 / 0.86 | Time scope: now, as of a date, or every version. Questions about the past go from 0.05 to 0.90 recall. The recall bar is met; MRR isn't yet |
 | 7 | 0.92 | 0.79 | 0.96 / 0.86 | Record types: the kinds of record a question is about come first. Ties now share a rank, so the scores are the same on every run (before, MRR moved between 0.79 and 0.80 from run to run) |
+| 8 | 0.94 | 0.82 | 0.96 / 0.86 | Episode dates: a named period keeps only the episodes overlapping it, and "last" or "most recent" ranks newer events higher. **All the bars are met** |
 
 **What was tried in step 5 and didn't help** (main questions only, before the router):
 
@@ -512,7 +513,7 @@ mutable/
 │   ├── api_types.py              Pydantic request and response classes
 │   ├── embeddings.py             turns text into vectors: the real model, and a fake for tests
 │   ├── search.py                 ranks a tenant's records against a question
-│   ├── search_plan.py            reads a question: which record types, and which point in time
+│   ├── search_plan.py            reads a question: which record types, which point in time, which period
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -937,7 +938,9 @@ flowchart TB
 ```json
 {
   "plan": {"types": ["episode", "fact", "preference"], "time": "as_of",
-           "as_of": "2023-07-01T00:00:00Z"},
+           "as_of": "2023-07-01T00:00:00Z",
+           "period": {"start": "2023-01-01T00:00:00Z", "end": "2024-01-01T00:00:00Z"},
+           "latest": false},
   "results": [{"id": "…", "type": "preference", "content": "Is vegetarian", "score": 0.016,
                "valid_from": "2016-01-01T00:00:00Z", "valid_to": "2025-05-01T00:00:00Z",
                "event_time": null}]
@@ -951,6 +954,8 @@ flowchart TD
     p --> t["text_search: by words<br/>content_words @@ ('maya' | 'vegetarian' | 'back')<br/>ORDER BY ts_rank_cd, top 50 in scope"]
     v --> f["fuse: Reciprocal Rank Fusion<br/>each record gets weight ÷ (60 + its rank) from each ranking<br/>weights: meaning 1.0, words 0.2"]
     t --> f
+    p --> l["latest_episodes: newest first<br/>only for 'last', 'most recent'"]
+    l --> f
     f --> first["the plan's types first,<br/>then the rest, each in order"]
     first --> out["top k, best first<br/>score = the fused score"]
 ```
@@ -979,19 +984,30 @@ flowchart TD
 
 - **A date resolves to the middle of its period.** A year means July 1, "early" March 1, "late" November 1, and a month its 15th. If a preference changed during the year, the version true at mid-year wins.
 - **A version's window ends exactly where its replacement's begins,** so for a changed preference exactly one version matches any date.
-- **Episodes are kept in every scope.** They're events, not states that hold for a while, so "as of" a date doesn't apply to them; [step 8](#21-now-milestone-4-search) uses their `event_time` instead.
+- **Episodes are kept in every time scope.** They're events, not states that hold for a while, so "as of" a date doesn't apply to them. Their `event_time` is used instead (below).
 - **`as_of` is strict:** a record written without a `valid_from` starts when it was written, so it's left out of searches about earlier dates ([4.9](#49-search-doesnt-reach-its-targets-yet)).
 
-**The two rankings and the merge** (`search.py`):
+**Episode dates** (`search_plan.py` and `search.py`):
+
+| Plan field | When | Effect on episodes |
+|---|---|---|
+| `period` | The question names a date. A month covers that month; a year, the year; "early", "mid" and "late" a third of it (January–April, May–August, September–December); "last year" and "N years ago", that year | Only episodes overlapping the period are kept: they start before it ends, and end (or, with no end, start) at or after it starts. A filter, not a boost: a stated date is part of the question, not a guess |
+| `latest` | "last" (but not "last year", "last week"…), "most recent", "latest", "recently" | A third ranking joins the merge: every episode in scope, newest first (`latest_episodes`), at weight 0.3 (`LATEST_WEIGHT`). It knows nothing about the question, so it only tips the balance between events that are already relevant |
+
+- **The period filter also helps questions about preferences.** "What exercise was Maya doing in early 2025?" no longer gets episodes from other years as noise: questions about the past went from 0.90 to 1.00 recall.
+- **The newest-first ranking counts for little.** Weights from 0.3 to 1.0 scored the same on the main questions, so the smallest was kept: the less it counts, the less a recent but unrelated event can push ahead.
+
+**The rankings and the merge** (`search.py`):
 
 | Name | What it is |
 |---|---|
 | `hybrid_search(db, embedder, question, k, plan)` | What `/search` calls: both rankings over the records in the plan's scope, top 50 each (`CANDIDATES`), merged by `fuse` |
 | `vector_search(db, embedder, question, k, plan)` | Ranks by meaning. Embeds the question, then orders the records in scope that have a vector by cosine distance. Its `score` is the cosine similarity |
 | `text_search(db, question, k, plan)` | Ranks by words. Postgres full-text search: records in scope sharing at least one of the question's words, ordered by `ts_rank_cd`, which grows with how many words match and how close together they are |
+| `latest_episodes(db, k, plan)` | Only when the plan's `latest` is set: every episode in scope, newest first. Its `score` is the event time, in seconds |
 | `fuse(rankings, k, weights)` | Reciprocal Rank Fusion. Merges by position, not score, since a cosine similarity and a text rank can't be compared. Records with the same score in a ranking share a rank (`shared_ranks`); ties in the sum go to the meaning ranking's order, then the smaller id |
 | `planned_types_first(hits, types)` | The hits of the plan's types, then the others, each group still in order |
-| `WEIGHTS`, `RRF_K`, `CANDIDATES` | 1.0 and 0.2 for meaning and words; 60; 50 |
+| `WEIGHTS`, `LATEST_WEIGHT`, `RRF_K`, `CANDIDATES` | 1.0 and 0.2 for meaning and words; 0.3 for newest first; 60; 50 |
 | `Hit` | One result: the record's id, type, content and dates, and its `score` |
 
 - **Each ranking is one query:** a `SELECT` per table, joined with `UNION ALL`, so one `ORDER BY` ranks all three types together.
@@ -1274,8 +1290,8 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
-| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422; questions about now, a date or the past get the current version, the version true then, or every version, and dated questions still find episodes; the plan's types come first, but other types aren't hidden |
-| `test_search_plan.py` | The rules, with no database. Time: years, parts of years, months and relative dates resolve to the right point in time; history phrases; everything else is "now"; a date wins over a history phrase; lookalikes ("20221", "1800s", "unchanged", "what does she use to…") are ignored. Types: events, likes, "why", and all three when unsure; tense and the opening question word decide |
+| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422; questions about now, a date or the past get the current version, the version true then, or every version, and dated questions still find episodes; the plan's types come first, but other types aren't hidden; a named period keeps only episodes overlapping it; "last" ranks the newer of two matching events first, but not a recent unrelated one; the plan reports its period and `latest` |
+| `test_search_plan.py` | The rules, with no database. Time: years, parts of years, months and relative dates resolve to the right point in time; history phrases; everything else is "now"; a date wins over a history phrase; lookalikes ("20221", "1800s", "unchanged", "what does she use to…") are ignored. Types: events, likes, "why", and all three when unsure; tense and the opening question word decide. Periods: months, years, thirds of years and relative years; "latest" cues, but not "last year" or "last week" |
 | `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, gives tied scores a shared rank, breaks ties in the sum by the first ranking, and cuts at `k` |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |

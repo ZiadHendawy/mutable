@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime
 
 import pytest
 
-from app.search_plan import SearchPlan, plan_search
+from app.search_plan import Period, SearchPlan, plan_search
 
 TODAY = date(2026, 11, 20)
 
@@ -110,3 +110,39 @@ ALL = {"fact", "preference", "episode"}
 )
 def test_reads_the_record_types(question: str, expected: set[str]) -> None:
     assert plan_search(question, TODAY).types == expected
+
+
+def period(start: tuple[int, int, int], end: tuple[int, int, int]) -> Period:
+    return Period(datetime(*start, tzinfo=UTC), datetime(*end, tzinfo=UTC))
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("Where did she travel in October 2025?", period((2025, 10, 1), (2025, 11, 1))),
+        ("What did she do in December 2025?", period((2025, 12, 1), (2026, 1, 1))),
+        ("What happened in 2024?", period((2024, 1, 1), (2025, 1, 1))),
+        ("Where did she go in early 2025?", period((2025, 1, 1), (2025, 5, 1))),
+        ("What did she do in late 2025?", period((2025, 9, 1), (2026, 1, 1))),
+        ("What did she do last year?", period((2025, 1, 1), (2026, 1, 1))),
+        ("Where did she go?", None),
+    ],
+)
+def test_reads_the_period_a_question_names(question: str, expected: Period | None) -> None:
+    assert plan_search(question, TODAY).period == expected
+
+
+@pytest.mark.parametrize(
+    ("question", "latest"),
+    [
+        ("When did she last visit Toronto?", True),
+        ("What was her most recent trip?", True),
+        ("What's the latest talk she gave?", True),
+        ("Has she travelled recently?", True),
+        ("What did she do last year?", False),  # a date, not "the most recent"
+        ("What did she do last week?", False),
+        ("When did she move to Lisbon?", False),
+    ],
+)
+def test_reads_whether_the_question_wants_the_latest(question: str, latest: bool) -> None:
+    assert plan_search(question, TODAY).latest is latest

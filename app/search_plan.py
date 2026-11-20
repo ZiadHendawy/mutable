@@ -8,11 +8,14 @@ The plan says which kinds of record to search:
 - all three otherwise. Facts are too varied to spot reliably, so they're never searched
   alone: a question that matches no rule searches everything
 
-and which point in time the question is about:
+which point in time the question is about:
 
 - "now", the default: current versions only ("What's Maya's diet these days?")
 - "as_of" a date: the versions that were true then ("Was Maya vegetarian back in 2023?")
 - "history": every version, current or not ("How has Maya's diet changed over time?")
+
+and, for episodes, which period they must fall in ("in October 2025"), and whether the
+question wants the most recent one ("When did she last visit Toronto?").
 
 It's made by rules, not a model: a handful of patterns, checked in order, so every decision
 is predictable and can be explained. Rules can't turn a phrase like "when she was at
@@ -31,10 +34,22 @@ ALL_TYPES: frozenset[RecordType] = frozenset({"fact", "preference", "episode"})
 
 
 @dataclass(frozen=True)
+class Period:
+    """A stretch of time a question names: "October 2025" is October 1 to November 1."""
+
+    start: datetime  # inclusive
+    end: datetime  # exclusive
+
+
+@dataclass(frozen=True)
 class SearchPlan:
     types: frozenset[RecordType] = ALL_TYPES
     time: TimeScope = "now"
     as_of: datetime | None = None  # set exactly when time is "as_of"
+    # The period the question names, if any. Episodes must overlap it.
+    period: Period | None = None
+    # The question asks for the most recent event ("When did she last visit Toronto?").
+    latest: bool = False
 
 
 MONTHS = {
@@ -62,6 +77,8 @@ MONTHS = {
 # by what was true halfway through. "Early" and "late" move that to March and November.
 PART_OF_YEAR = {"early": 3, "mid": 7, "late": 11}
 MID_YEAR = 7
+# The months each part of a year covers, as (first month, first month after): thirds.
+PART_MONTHS = {"early": (1, 5), "mid": (5, 9), "late": (9, 13)}
 
 YEAR = r"(?P<year>(?:19|20)\d{2})"
 MONTH = r"(?P<month>" + "|".join(MONTHS) + r")"
@@ -72,6 +89,12 @@ PART = r"(?P<part>early|mid|late)"
 DATE_PHRASE = re.compile(rf"\b(?:(?:{MONTH}|{PART})[\s-]+(?:of\s+)?)?{YEAR}\b", re.IGNORECASE)
 YEARS_AGO = re.compile(r"\b(?P<n>\d+|a|one|two|three|four|five)\s+years?\s+ago\b", re.IGNORECASE)
 LAST_YEAR = re.compile(r"\blast\s+year\b", re.IGNORECASE)
+# "last visit", "the most recent trip", "latest", "recently". Not "last year" (a date) or
+# "last week" and the like.
+LATEST = re.compile(
+    r"\b(?:most\s+recent(?:ly)?|latest|recently|last(?!\s+(?:year|month|week|day|night|time)\b))\b",
+    re.IGNORECASE,
+)
 NUMBER_WORDS = {"a": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
 
 # Phrases that ask about the past without a date. Each is a whole-word match.
@@ -146,12 +169,15 @@ def plan_search(question: str, today: date | None = None) -> SearchPlan:
     today = today or datetime.now(UTC).date()
     types = _types_for(question)
 
-    as_of = _date_in(question, today)
-    if as_of is not None:
-        return SearchPlan(types=types, time="as_of", as_of=as_of)
+    latest = bool(LATEST.search(question))
+
+    named = _date_in(question, today)
+    if named is not None:
+        point, period = named
+        return SearchPlan(types=types, time="as_of", as_of=point, period=period, latest=latest)
     if HISTORY.search(question):
-        return SearchPlan(types=types, time="history")
-    return SearchPlan(types=types)
+        return SearchPlan(types=types, time="history", latest=latest)
+    return SearchPlan(types=types, latest=latest)
 
 
 def _types_for(question: str) -> frozenset[RecordType]:
@@ -167,23 +193,33 @@ def _types_for(question: str) -> frozenset[RecordType]:
     return ALL_TYPES
 
 
-def _date_in(question: str, today: date) -> datetime | None:
-    """The point in time a question names, if it names one."""
+def _date_in(question: str, today: date) -> tuple[datetime, Period] | None:
+    """The point in time a question names, and the period around it, if it names one."""
     if match := DATE_PHRASE.search(question):
         year = int(match["year"])
         if match["month"]:
             # A month means its middle.
-            return _utc(year, MONTHS[match["month"].lower()], 15)
+            month = MONTHS[match["month"].lower()]
+            return _utc(year, month, 15), _months(year, month, month + 1)
         if match["part"]:
-            return _utc(year, PART_OF_YEAR[match["part"].lower()], 1)
-        return _utc(year, MID_YEAR, 1)
+            part = match["part"].lower()
+            return _utc(year, PART_OF_YEAR[part], 1), _months(year, *PART_MONTHS[part])
+        return _utc(year, MID_YEAR, 1), _months(year, 1, 13)
     if match := YEARS_AGO.search(question):
         n = match["n"].lower()
-        years = NUMBER_WORDS[n] if n in NUMBER_WORDS else int(n)
-        return _utc(today.year - years, MID_YEAR, 1)
+        year = today.year - (NUMBER_WORDS[n] if n in NUMBER_WORDS else int(n))
+        return _utc(year, MID_YEAR, 1), _months(year, 1, 13)
     if LAST_YEAR.search(question):
-        return _utc(today.year - 1, MID_YEAR, 1)
+        year = today.year - 1
+        return _utc(year, MID_YEAR, 1), _months(year, 1, 13)
     return None
+
+
+def _months(year: int, first: int, after: int) -> Period:
+    """From the first day of month `first` to the first day of month `after` (13 is next
+    January)."""
+    end = _utc(year + 1, 1, 1) if after == 13 else _utc(year, after, 1)
+    return Period(start=_utc(year, first, 1), end=end)
 
 
 def _utc(year: int, month: int, day: int) -> datetime:
