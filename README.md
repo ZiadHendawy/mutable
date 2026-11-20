@@ -123,7 +123,7 @@ Interactive API docs are at `localhost:8000/docs` while the API runs.
 | Path | What's in it |
 |---|---|
 | `app/` | The API: the FastAPI app, the tables, the request and response shapes, one router per memory type, and the embedding model that turns text into vectors for search |
-| `migrations/` | The database's history, numbered `0001`–`0007` in the order they run |
+| `migrations/` | The database's history, numbered `0001`–`0008` in the order they run |
 | `eval/` | The eval: Maya's and Jonas's data files, and one Python module per step |
 | `tests/` | Tests that run against a real Postgres, so the real isolation rules are what get tested |
 | `docs/design.md` | The design overview: architecture, roadmap, evaluation, gaps, code reference |

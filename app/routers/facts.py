@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api_types import MemoryFactCreate, MemoryFactRead
 from app.db import TENANT_DB, get_tenant_id
+from app.embeddings import Embedder, get_embedder
 from app.tables import MemoryFact
 
 router = APIRouter(prefix="/facts", tags=["facts"])
@@ -16,9 +17,14 @@ router = APIRouter(prefix="/facts", tags=["facts"])
 def create_fact(
     payload: MemoryFactCreate,
     tenant_id: uuid.UUID = Depends(get_tenant_id),
+    embedder: Embedder = Depends(get_embedder),
     db: Session = TENANT_DB,
 ) -> MemoryFact:
-    fact = MemoryFact(tenant_id=tenant_id, **payload.model_dump(exclude_none=True))
+    fact = MemoryFact(
+        tenant_id=tenant_id,
+        embedding=embedder.embed([payload.content])[0],
+        **payload.model_dump(exclude_none=True),
+    )
     db.add(fact)
     db.flush()
     db.refresh(fact)
