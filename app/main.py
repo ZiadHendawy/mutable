@@ -3,12 +3,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import TENANT_DB, get_db
-from app.routers import episodes, facts, preferences
+from app.routers import episodes, facts, preferences, search
 
 app = FastAPI(title="Mutable")
 app.include_router(facts.router)
 app.include_router(preferences.router)
 app.include_router(episodes.router)
+app.include_router(search.router)
 
 
 @app.get("/health")

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -79,3 +79,19 @@ class MemoryEpisodeRead(BaseModel):
     valid_from: datetime
     valid_to: datetime | None
     created_at: datetime
+
+
+class SearchResult(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    type: Literal["fact", "preference", "episode"]
+    content: str
+    score: float  # cosine similarity to the question; higher is closer
+    valid_from: datetime
+    valid_to: datetime | None
+    event_time: datetime | None  # episodes only
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResult]  # best first

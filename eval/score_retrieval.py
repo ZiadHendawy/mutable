@@ -2,7 +2,8 @@
 answers.
 
 A retriever gets only what a real caller has -- the question text -- never the expected
-answers. Until milestone 4 adds search, the default retriever finds nothing.
+answers. `api_search` asks the app's /search endpoint, as a real caller would; `no_search`
+finds nothing, and is what the eval's own tests use to check the gates in isolation.
 """
 
 import uuid
@@ -25,9 +26,25 @@ class Retrieved:
 Retriever = Callable[[httpx.Client, uuid.UUID, str], Retrieved]
 
 
+# How many results api_search asks for: more than any cutoff the report uses, so `-k` can
+# be raised without changing this.
+SEARCH_LIMIT = 20
+
+
 def no_search(client: httpx.Client, tenant_id: uuid.UUID, question: str) -> Retrieved:
-    """Placeholder until milestone 4 adds search: finds nothing."""
+    """Finds nothing: the baseline, for checking the eval's other gates on their own."""
     return Retrieved(ids=[])
+
+
+def api_search(client: httpx.Client, tenant_id: uuid.UUID, question: str) -> Retrieved:
+    """Asks GET /search, as the tenant, exactly as a real caller would."""
+    response = client.get(
+        "/search",
+        params={"q": question, "k": SEARCH_LIMIT},
+        headers={"X-Tenant-Id": str(tenant_id)},
+    )
+    response.raise_for_status()
+    return Retrieved(ids=[uuid.UUID(result["id"]) for result in response.json()["results"]])
 
 
 @dataclass

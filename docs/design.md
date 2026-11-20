@@ -222,7 +222,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 1 | Held-out questions: 20 more, never used for tuning | ✅ |
 | 2 | Embedding model behind one interface, plus a predictable fake for tests | ✅ |
 | 3 | Store each record's vector and full-text index when it's written | ✅ |
-| 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | |
+| 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | ✅ |
 | 5 | Hybrid search: add full-text, merge both rankings | |
 | 6 | Router, time scope: now, as of a date, or full history | |
 | 7 | Router, record types: which tables to search | |
@@ -276,9 +276,9 @@ Each question lists the records a correct answer must include, and sometimes the
 |---|---|---|
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
-| **Recall@5** | The share of expected records found in the top 5 results | 0.00 (no search yet) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.00 (no search yet) |
-| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 0 (no search yet) |
+| **Recall@5** | The share of expected records found in the top 5 results | 0.80 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
+| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.70 |
+| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 5 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
 
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-is-not-built-yet) | Search is not built yet | High | Milestone 4 (step 1 of 10 done) | Milestone 4 |
+| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 4 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -429,9 +429,13 @@ Memories include health details (allergies), relationships and locations. Isolat
 
 **Milestones 8 and 9 would send personal text to an LLM provider.** That needs a provider that doesn't train on the data or keep it, and only the minimum text should be sent. Search doesn't: its embedding model runs on the server itself.
 
-### 4.9 Search is not built yet
+### 4.9 Search doesn't reach its targets yet
 
-**The core value is unproven.** Recall is what users actually experience, and today it scores 0 because it doesn't exist. The targets (Recall@5 ≥ 0.9, MRR ≥ 0.8) are goals, not results.
+**The core value is only partly proven.** Recall is what users actually experience. `/search` exists, but it doesn't reach the targets (Recall@5 ≥ 0.9, MRR ≥ 0.8) yet:
+
+| After step | Recall@5 | MRR | Held-out Recall@5 / MRR | What changed |
+|---|---|---|---|---|
+| 4 | 0.80 | 0.70 | 0.82 / 0.72 | Vector search over current records. Questions about the past score 0.05: only current versions are searched |
 
 **Known weak spots, even after milestone 4:**
 
@@ -491,10 +495,12 @@ mutable/
 │   ├── tables.py                 SQLAlchemy table classes
 │   ├── api_types.py              Pydantic request and response classes
 │   ├── embeddings.py             turns text into vectors: the real model, and a fake for tests
+│   ├── search.py                 ranks a tenant's records against a question
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
-│       └── episodes.py           /episodes
+│       ├── episodes.py           /episodes
+│       └── search.py             /search
 ├── migrations/
 │   ├── env.py                    Alembic setup; connects as the superuser
 │   ├── script.py.mako            template for new migrations
@@ -591,12 +597,15 @@ The platform:
 
 ```mermaid
 flowchart LR
-    main["main.py"] --> routers["routers/<br/>facts · preferences · episodes"]
+    main["main.py"] --> routers["routers/<br/>facts · preferences · episodes · search"]
     main --> dbmod["db.py"]
     routers --> dbmod
     routers --> tables["tables.py"]
     routers --> apitypes["api_types.py"]
     routers --> embeddings["embeddings.py"]
+    routers --> searchmod["search.py"]
+    searchmod --> tables
+    searchmod --> embeddings
     tables --> embeddings
     dbmod --> settingsmod["settings.py"]
     env["migrations/env.py"] --> settingsmod
@@ -700,6 +709,7 @@ flowchart TD
 | GET | `/episodes` | `list_episodes` | 200 | 422 | Current only, latest event first |
 | GET | `/episodes/{id}` | `get_episode` | 200 | 404 | |
 | DELETE | `/episodes/{id}` | `delete_episode` | 204 | 404 | Permanent |
+| GET | `/search?q=…&k=5` | `search` | 200 | 422 | The `k` current records closest to `q`, best first ([below](#searching-searchpy)). `k` is 1–50 |
 
 Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header, and returns 422 without it. Endpoints are plain `def`, not `async`, so FastAPI runs them in a thread pool.
 
@@ -811,7 +821,7 @@ The classes declare columns and foreign keys only, with no ORM `relationship()`,
 | `content_words` | `tsvector`, Postgres's type for a text's searchable words | Postgres: a *generated* column, `to_tsvector('english', content)` (`Computed` in Python) | Computed on every insert or update, so it always matches `content`. "Lives in Lisbon" is stored as `'lisbon':3 'live':1`: each word in its base form, with its position, and "in" left out as too common |
 
 - **`content_words` has a GIN index,** Postgres's index for "which rows contain this word", like the index at the back of a book. It keeps word lookups fast as the tables grow.
-- **`embedding` has no index.** Search compares the question with every vector the tenant has. That's exact, and fast at this size; [gap 4.9](#49-search-is-not-built-yet) explains why an approximate index has to wait.
+- **`embedding` has no index.** Search compares the question with every vector the tenant has. That's exact, and fast at this size; [gap 4.9](#49-search-doesnt-reach-its-targets-yet) explains why an approximate index has to wait.
 
 #### Request and response classes: `api_types.py`
 
@@ -901,6 +911,29 @@ flowchart TB
 - **CI:** keeps it in a cache between runs, with the same guard on the test and API steps ([5.8](#58-running-it-containers-configuration-and-ci)).
 - **Anywhere else:** the first use downloads it to a temporary folder.
 
+#### Searching: `search.py`
+
+`GET /search?q=…&k=5` returns the caller's `k` records closest in meaning to the question, as `{"results": [...]}`. Each result has the record's `id`, `type`, `content`, `score`, `valid_from` and `valid_to`, plus `event_time` for episodes.
+
+```mermaid
+flowchart TD
+    q["GET /search?q=What's Maya's diet these days?"] --> embed["embed the question<br/>(the same model as the records)"]
+    embed --> sql["one query: a SELECT per table, joined by UNION ALL<br/>current versions only, rows with a vector only<br/>RLS limits it to this tenant"]
+    sql --> rank["ORDER BY embedding <=> question vector, id<br/>LIMIT k"]
+    rank --> out["results, best first<br/>score = 1 − cosine distance"]
+```
+
+| Name | What it is |
+|---|---|
+| `vector_search(db, embedder, question, k)` | Embeds the question, then ranks every current record of all three types in one query, and returns the top `k` as `Hit`s |
+| `Hit` | One result: the record's id, type, content and dates, and its `score` |
+| `TABLES` | The record type → table class map the query is built from |
+
+- **`<=>` is pgvector's cosine distance:** 0 when two vectors point the same way, up to 2 when they're opposite. The score is 1 minus that, the cosine similarity, so higher is closer.
+- **"Current" means `valid_to IS NULL`,** so a superseded preference never comes back. Questions about the past need the router ([milestone 4, step 6](#21-now-milestone-4-search)).
+- **There's no `WHERE tenant_id`.** The query runs in the tenant's transaction (`TENANT_DB`), and Row-Level Security limits every table in it to that tenant's rows.
+- **`id` breaks ties,** so the same data always comes back in the same order.
+
 ### 5.5 The database (`migrations/`)
 
 ```mermaid
@@ -953,7 +986,7 @@ flowchart TD
     ev --> ci["check_isolation()"]
     ev --> cs["check_supersede()<br/>per person"]
     ev --> sa["score_all()"]
-    sa --> rt["retriever(question text)<br/>today: no_search"]
+    sa --> rt["retriever(question text)<br/>api_search: GET /search"]
     sa --> sq["score_question()<br/>per question"]
     ev --> rep["Report"]
     main --> fr["report.format_report()<br/>print, exit 0 or 1"]
@@ -1079,7 +1112,8 @@ It also works on its own: `python -m eval.write_data maya jonas` prints each ten
 |---|---|
 | `Retrieved` | What a search returns: ranked `ids`, and optionally the `route` (record types) it chose |
 | `Retriever` | The search interface: (client, tenant id, question text) → `Retrieved` |
-| `no_search` | Today's placeholder retriever: finds nothing |
+| `api_search` | The retriever the command line uses: asks `GET /search` as the tenant, for the top 20 (`SEARCH_LIMIT`), so any `-k` up to 20 can be scored |
+| `no_search` | Finds nothing. The eval's own tests use it to check the other gates on their own |
 | `QuestionResult` | One question's score: `missing`, `excluded_hits`, `leaked`, `reciprocal_rank`, `route_ok`, plus `recall` and `passed` |
 | `score_all(...)` | Asks every question for every person; returns main and held-out results separately |
 
@@ -1172,12 +1206,13 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
+| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first, with its cosine score; episodes carry `event_time`; superseded versions, other tenants' records and rows with no vector are left out; `k` limits the results; bad `q` or `k` gets a 422 |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |
 | `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
 | `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
-| `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check |
+| `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check<br/>• searching through the real endpoint never leaks |
 
 ### 5.8 Running it: containers, configuration and CI
 
