@@ -224,7 +224,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 3 | Store each record's vector and full-text index when it's written | ✅ |
 | 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | ✅ |
 | 5 | Hybrid search: add full-text, merge both rankings | ✅ |
-| 6 | Router, time scope: now, as of a date, or full history | |
+| 6 | Router, time scope: now, as of a date, or full history | ✅ |
 | 7 | Router, record types: which tables to search | |
 | 8 | Episode dates: "in October 2025", "most recent" | |
 | 9 | Reach the score targets; check the held-out score once, at the end | |
@@ -276,9 +276,9 @@ Each question lists the records a correct answer must include, and sometimes the
 |---|---|---|
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
-| **Recall@5** | The share of expected records found in the top 5 results | 0.80 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.70 |
-| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 6 |
+| **Recall@5** | The share of expected records found in the top 5 results | 0.92 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
+| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.78 |
+| **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 2 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
 
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 5 of 10 done) | Milestone 4 |
+| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 6 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -437,6 +437,7 @@ Memories include health details (allergies), relationships and locations. Isolat
 |---|---|---|---|---|
 | 4 | 0.80 | 0.70 | 0.82 / 0.72 | Vector search over current records. Questions about the past score 0.05: only current versions are searched |
 | 5 | 0.80 | 0.70 | 0.87 / 0.73 | Hybrid: full-text search merged in at weight 0.2. Episodes, full of names and places, reach recall 1.00 |
+| 6 | 0.92 | 0.78 | 0.98 / 0.86 | Time scope: now, as of a date, or every version. Questions about the past go from 0.05 to 0.90 recall. The recall bar is met; MRR isn't yet |
 
 **What was tried in step 5 and didn't help** (main questions only, before the router):
 
@@ -452,7 +453,8 @@ Without the 10 questions about the past, which only the router can answer (step 
 
 **Known weak spots, even after milestone 4:**
 
-- **Implicit time is out of reach for rules.** For "What was her coffee habit *when she was at university*?", rules can't turn the phrase into a date, so old and new versions both come back. 2 of the 75 questions are like this. An LLM router is the likely fix.
+- **Implicit time is out of reach for rules.** For "What was her coffee habit *when she was at university*?", rules can't turn the phrase into a date, so it's read as "every version", and old and new versions both come back. 2 of the 75 questions are like this. An LLM router is the likely fix.
+- **"As of" a date drops records written without a `valid_from`.** An omitted `valid_from` means "from the time it was written", so a timeless fact ("Was born on March 14, 1995") written today doesn't count as true in 2023. The fix is a way to say "start unknown": an optional `valid_from`. Episodes aren't affected: "as of" never applies to them.
 - **Approximate vector indexes and Row-Level Security interact at scale.** Together they can return fewer results than asked for, because the security filter runs after the approximate search has narrowed the candidates. That's fine at today's size, but it must be designed for before there are many users.
 
 ### 4.10 The eval is small and synthetic
@@ -502,13 +504,14 @@ Every file, class and framework, for engineers working on the code. Sections 1�
 ```
 mutable/
 ├── app/                          the API
-│   ├── main.py                   creates the FastAPI app; /health, /health/db, /whoami
+│   ├── main.py                   creates the FastAPI app, loads the model at startup; /health, /health/db, /whoami
 │   ├── settings.py               Settings: the two database URLs
 │   ├── db.py                     engine, sessions, tenant scoping (TENANT_DB)
 │   ├── tables.py                 SQLAlchemy table classes
 │   ├── api_types.py              Pydantic request and response classes
 │   ├── embeddings.py             turns text into vectors: the real model, and a fake for tests
 │   ├── search.py                 ranks a tenant's records against a question
+│   ├── search_plan.py            reads a question's time scope: now, as of a date, or every version
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -619,6 +622,8 @@ flowchart LR
     routers --> searchmod["search.py"]
     searchmod --> tables
     searchmod --> embeddings
+    searchmod --> plan["search_plan.py"]
+    routers --> plan
     tables --> embeddings
     dbmod --> settingsmod["settings.py"]
     env["migrations/env.py"] --> settingsmod
@@ -722,7 +727,7 @@ flowchart TD
 | GET | `/episodes` | `list_episodes` | 200 | 422 | Current only, latest event first |
 | GET | `/episodes/{id}` | `get_episode` | 200 | 404 | |
 | DELETE | `/episodes/{id}` | `delete_episode` | 204 | 404 | Permanent |
-| GET | `/search?q=…&k=5` | `search` | 200 | 422 | The `k` current records best matching `q`, by meaning and by words, best first ([below](#searching-searchpy)). `k` is 1–50 |
+| GET | `/search?q=…&k=5` | `search` | 200 | 422 | The `k` records best matching `q`, by meaning and by words, in the time scope the question asks about, best first, plus that plan ([below](#searching-searchpy-and-search_planpy)). `k` is 1–50 |
 
 Every endpoint except `/health` and `/health/db` needs the `X-Tenant-Id` header, and returns 422 without it. Endpoints are plain `def`, not `async`, so FastAPI runs them in a thread pool.
 
@@ -914,7 +919,7 @@ flowchart TB
 | `Embedder` | The interface, a `typing.Protocol`: a `dimension`, and `embed(texts)`, which returns one vector per text, in order. Code that needs vectors depends on this, not on either class |
 | `LocalEmbedder` | The real one: the model, run on the CPU by fastembed. Related texts get close vectors even when they share no words. Vectors come back scaled to length 1 |
 | `FakeEmbedder` | For tests. Each word adds 1 to one of the 384 numbers, picked by a checksum of the word (`zlib.crc32`), and the vector is then scaled to length 1. So the same text gets the same vector in every run, and texts that share words get closer vectors. It knows nothing about meaning |
-| `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a moment, so it's never done per request |
+| `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a few seconds, so `main.py`'s startup hook (`lifespan`) calls it once before the server accepts requests: `/health` answers only once the model is ready, and no caller's first request waits |
 
 **Where it's used.** The three create endpoints embed each record's content once, as it's written, and store the vector in its `embedding` column. The API tests swap in `FakeEmbedder` (`tests/conftest.py`), so they never load the model, stay fast, and know exactly which vector each record gets.
 
@@ -924,26 +929,49 @@ flowchart TB
 - **CI:** keeps it in a cache between runs, with the same guard on the test and API steps ([5.8](#58-running-it-containers-configuration-and-ci)).
 - **Anywhere else:** the first use downloads it to a temporary folder.
 
-#### Searching: `search.py`
+#### Searching: `search.py` and `search_plan.py`
 
-`GET /search?q=…&k=5` returns the caller's `k` records that best match the question, as `{"results": [...]}`. Each result has the record's `id`, `type`, `content`, `score`, `valid_from` and `valid_to`, plus `event_time` for episodes.
+`GET /search?q=…&k=5` returns the caller's `k` records that best match the question, and the plan it searched with:
 
-Two rankings of the caller's current records are merged into one:
+```json
+{
+  "plan": {"time": "as_of", "as_of": "2023-07-01T00:00:00Z"},
+  "results": [{"id": "…", "type": "preference", "content": "Is vegetarian", "score": 0.016,
+               "valid_from": "2016-01-01T00:00:00Z", "valid_to": "2025-05-01T00:00:00Z",
+               "event_time": null}]
+}
+```
 
 ```mermaid
 flowchart TD
-    q["GET /search?q=When did Theo last visit Maya?"] --> v["vector_search: by meaning<br/>embed the question, ORDER BY embedding <=> question vector<br/>top 50"]
-    q --> t["text_search: by words<br/>content_words @@ ('theo' | 'last' | 'visit' | 'maya')<br/>ORDER BY ts_rank_cd, top 50"]
+    q["GET /search?q=Was Maya vegetarian back in 2023?"] --> p["plan_search: read the time scope<br/>a date → as_of · a history phrase → history · otherwise now"]
+    p --> v["vector_search: by meaning<br/>embed the question, ORDER BY embedding <=> question vector<br/>top 50 in scope"]
+    p --> t["text_search: by words<br/>content_words @@ ('maya' | 'vegetarian' | 'back')<br/>ORDER BY ts_rank_cd, top 50 in scope"]
     v --> f["fuse: Reciprocal Rank Fusion<br/>each record gets weight ÷ (60 + its rank) from each ranking<br/>weights: meaning 1.0, words 0.2"]
     t --> f
     f --> out["top k, best first<br/>score = the fused score"]
 ```
 
+**The time scope** (`search_plan.py`). Rules, checked in order, so every decision can be explained:
+
+| Scope | When | Facts and preferences kept | Example |
+|---|---|---|---|
+| `as_of` a date | The question names a date: a year ("back in 2023"), part of one ("early 2025"), a month ("October 2025"), or a relative one ("last year", "3 years ago") | Those true at the date: `valid_from ≤ date` and (`valid_to` empty or `> date`) | "Was Maya vegetarian back in 2023?" |
+| `history` | No date, but a phrase about the past: "used to", "did she use to", "before", "previously", "over time", "changed", "early in her career", "when she was…" | Every version | "How has Maya's diet changed over time?" |
+| `now` | Anything else | Current versions only (`valid_to` empty) | "What's Maya's diet these days?" |
+
+- **A date resolves to the middle of its period.** A year means July 1, "early" March 1, "late" November 1, and a month its 15th. If a preference changed during the year, the version true at mid-year wins.
+- **A version's window ends exactly where its replacement's begins,** so for a changed preference exactly one version matches any date.
+- **Episodes are kept in every scope.** They're events, not states that hold for a while, so "as of" a date doesn't apply to them; [step 8](#21-now-milestone-4-search) uses their `event_time` instead.
+- **`as_of` is strict:** a record written without a `valid_from` starts when it was written, so it's left out of searches about earlier dates ([4.9](#49-search-doesnt-reach-its-targets-yet)).
+
+**The two rankings and the merge** (`search.py`):
+
 | Name | What it is |
 |---|---|
-| `hybrid_search(db, embedder, question, k)` | What `/search` calls: both rankings, top 50 each (`CANDIDATES`), merged by `fuse` |
-| `vector_search(db, embedder, question, k)` | Ranks by meaning. Embeds the question, then orders every current record with a vector by cosine distance. Its `score` is the cosine similarity |
-| `text_search(db, question, k)` | Ranks by words. Postgres full-text search: records sharing at least one of the question's words, ordered by `ts_rank_cd`, which grows with how many words match and how close together they are |
+| `hybrid_search(db, embedder, question, k, plan)` | What `/search` calls: both rankings over the records in the plan's scope, top 50 each (`CANDIDATES`), merged by `fuse` |
+| `vector_search(db, embedder, question, k, plan)` | Ranks by meaning. Embeds the question, then orders the records in scope that have a vector by cosine distance. Its `score` is the cosine similarity |
+| `text_search(db, question, k, plan)` | Ranks by words. Postgres full-text search: records in scope sharing at least one of the question's words, ordered by `ts_rank_cd`, which grows with how many words match and how close together they are |
 | `fuse(rankings, k, weights)` | Reciprocal Rank Fusion. Merges by position, not score, since a cosine similarity and a text rank can't be compared. Ties go to the smaller id |
 | `WEIGHTS`, `RRF_K`, `CANDIDATES` | 1.0 and 0.2 for meaning and words; 60; 50 |
 | `Hit` | One result: the record's id, type, content and dates, and its `score` |
@@ -952,7 +980,6 @@ flowchart TD
 - **The full-text query matches *any* of the question's words.** `plainto_tsquery` reduces the question to its searchable words, the same way `content_words` was made, but joins them with `&` (all must match). A question always has words no record contains, such as "Maya" here, so `text_search` swaps `&` for `|` and lets the ranking decide.
 - **Words count for less than meaning (0.2).** On its own, full-text search finds the right record far less often (0.60 recall against 0.80), because its ranking doesn't know which words are rare. The weight was tuned on the main questions only ([4.9](#49-search-doesnt-reach-its-targets-yet)).
 - **60 is RRF's usual constant,** from the paper that introduced it. A larger constant narrows the gap between 1st and 2nd place.
-- **"Current" means `valid_to IS NULL`,** so a superseded preference never comes back. Questions about the past need the router ([milestone 4, step 6](#21-now-milestone-4-search)).
 - **A record with no vector,** written before migration 0008, is still found by its words.
 - **There's no `WHERE tenant_id`.** The queries run in the tenant's transaction (`TENANT_DB`), and Row-Level Security limits every table to that tenant's rows.
 
@@ -1228,7 +1255,8 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
-| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422 |
+| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422; questions about now, a date or the past get the current version, the version true then, or every version, and dated questions still find episodes |
+| `test_search_plan.py` | The time-scope rules, with no database: years, parts of years, months and relative dates resolve to the right point in time; history phrases; everything else is "now"; a date wins over a history phrase; lookalikes ("20221", "1800s", "unchanged", "what does she use to…") are ignored |
 | `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, breaks ties by id and cuts at `k` |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |

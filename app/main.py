@@ -1,11 +1,26 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db import TENANT_DB, get_db
+from app.embeddings import get_embedder
 from app.routers import episodes, facts, preferences, search
 
-app = FastAPI(title="Mutable")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Load the embedding model before the server accepts requests, so no caller's first
+    # request waits seconds for it. Uvicorn finishes starting, and /health answers, only
+    # once this is done. Tests swap in the fake embedder, so this loads nothing for them.
+    embedder = app.dependency_overrides.get(get_embedder, get_embedder)()
+    embedder.embed(["warm up"])
+    yield
+
+
+app = FastAPI(title="Mutable", lifespan=lifespan)
 app.include_router(facts.router)
 app.include_router(preferences.router)
 app.include_router(episodes.router)

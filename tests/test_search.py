@@ -135,4 +135,70 @@ def test_rejects_bad_parameters(tenant) -> None:
 def test_requires_a_tenant(client) -> None:
     assert client.get("/search", params={"q": "tea"}).status_code == 422
     headers = {"X-Tenant-Id": str(uuid.uuid4())}
-    assert client.get("/search", params={"q": "tea"}, headers=headers).json() == {"results": []}
+    assert client.get("/search", params={"q": "tea"}, headers=headers).json()["results"] == []
+
+
+def _diet_history(tenant) -> tuple[str, str]:
+    """Vegetarian from 2016, pescatarian from May 2025. Returns (old id, new id)."""
+    old = tenant.post(
+        "/preferences",
+        json={
+            "content": "Is vegetarian",
+            "confidence": 0.9,
+            "strength": 0.9,
+            "valid_from": "2016-01-01T00:00:00Z",
+        },
+    ).json()["id"]
+    new = tenant.post(
+        "/preferences",
+        json={
+            "content": "Is pescatarian",
+            "confidence": 0.9,
+            "strength": 0.9,
+            "valid_from": "2025-05-01T00:00:00Z",
+            "supersedes": old,
+        },
+    ).json()["id"]
+    return old, new
+
+
+def _search_with_plan(tenant, q: str) -> tuple[dict, list[str]]:
+    response = tenant.get("/search", params={"q": q, "k": 50})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    return body["plan"], [r["id"] for r in body["results"]]
+
+
+def test_a_question_about_now_gets_the_current_version(tenant) -> None:
+    old, new = _diet_history(tenant)
+    plan, ids = _search_with_plan(tenant, "Is she vegetarian these days?")
+    assert plan == {"time": "now", "as_of": None}
+    assert new in ids and old not in ids
+
+
+def test_a_dated_question_gets_the_version_true_then(tenant) -> None:
+    old, new = _diet_history(tenant)
+    plan, ids = _search_with_plan(tenant, "Was she vegetarian in 2023?")
+    assert plan == {"time": "as_of", "as_of": "2023-07-01T00:00:00Z"}
+    assert old in ids and new not in ids
+
+
+def test_a_date_before_any_version_gets_neither(tenant) -> None:
+    old, new = _diet_history(tenant)
+    _, ids = _search_with_plan(tenant, "Was she vegetarian in 2010?")
+    assert old not in ids and new not in ids
+
+
+def test_a_history_question_gets_every_version(tenant) -> None:
+    old, new = _diet_history(tenant)
+    plan, ids = _search_with_plan(tenant, "How has her diet changed over time?")
+    assert plan == {"time": "history", "as_of": None}
+    assert old in ids and new in ids
+
+
+def test_dated_questions_still_find_episodes(tenant) -> None:
+    # Episodes are events, not states: "as of" a date never hides them. Their valid_from
+    # is the write time, which a strict window would put after any past date.
+    episode = tenant.post("/episodes", json=MARATHON).json()["id"]
+    _, ids = _search_with_plan(tenant, "What did she run in October 2025?")
+    assert episode in ids

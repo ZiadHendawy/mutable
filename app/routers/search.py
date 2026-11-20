@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api_types import SearchResponse, SearchResult
+from app.api_types import SearchPlanRead, SearchResponse, SearchResult
 from app.db import TENANT_DB
 from app.embeddings import Embedder, get_embedder
 from app.search import hybrid_search
+from app.search_plan import plan_search
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -18,5 +19,9 @@ def search(
     embedder: Embedder = Depends(get_embedder),
     db: Session = TENANT_DB,
 ) -> SearchResponse:
-    hits = hybrid_search(db, embedder, q, k)
-    return SearchResponse(results=[SearchResult.model_validate(hit) for hit in hits])
+    plan = plan_search(q)
+    hits = hybrid_search(db, embedder, q, k, plan)
+    return SearchResponse(
+        plan=SearchPlanRead.model_validate(plan),
+        results=[SearchResult.model_validate(hit) for hit in hits],
+    )
