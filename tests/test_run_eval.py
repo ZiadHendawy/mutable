@@ -6,7 +6,7 @@ from eval.check_isolation import check_isolation
 from eval.check_supersede import check_supersede
 from eval.report import format_report
 from eval.run_eval import evaluate
-from eval.score_retrieval import Retrieved
+from eval.score_retrieval import Retrieved, api_search
 from eval.write_data import WrittenPersona, write_all
 
 
@@ -131,3 +131,12 @@ def test_isolation_check_catches_a_shared_tenant(client, tenants) -> None:
 
     assert leaks
     assert any("impostor got 200 for maya's maya.pref.diet.v1" == leak for leak in leaks)
+
+
+def test_searching_through_the_api_never_leaks(client, tenants) -> None:
+    # The real endpoint, with the fake embedder: its rankings are poor, but every result it
+    # returns must still be the asking tenant's own.
+    report = evaluate(client, tenants, api_search)
+    assert report.retrieval_leaks == 0
+    assert report.passed()
+    assert report.recall > 0

@@ -36,8 +36,8 @@ class TenantClient:
         self.headers = {"X-Tenant-Id": self.id}
         self._client = client
 
-    def get(self, path: str) -> Response:
-        return self._client.get(path, headers=self.headers)
+    def get(self, path: str, params: dict | None = None) -> Response:
+        return self._client.get(path, params=params, headers=self.headers)
 
     def post(self, path: str, json: dict) -> Response:
         return self._client.post(path, json=json, headers=self.headers)

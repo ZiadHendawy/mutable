@@ -12,8 +12,9 @@ One module per step, in the order they run:
     report.py           totals, pass/fail, and the printed table
 
 Exits non-zero when a gate fails: any cross-tenant leak, or any supersede check. Retrieval
-metrics are reported against the bars in docs/design.md but only gate the run with
---require-retrieval, since there is no search endpoint until milestone 4.
+is scored by asking the app's GET /search; its metrics are reported against the bars in
+docs/design.md but only gate the run with --require-retrieval, until search reaches them
+(milestone 4, step 10).
 
 Held-out questions are scored exactly like the main set but reported only as totals, never
 question by question, so search can't be tuned against them. --require-retrieval holds both
@@ -28,7 +29,7 @@ import httpx
 from eval.check_isolation import check_isolation
 from eval.check_supersede import check_supersede
 from eval.report import Report, format_report
-from eval.score_retrieval import Retriever, no_search, score_all
+from eval.score_retrieval import Retriever, api_search, no_search, score_all
 from eval.write_data import WrittenPersona, write_all
 
 
@@ -66,7 +67,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with httpx.Client(base_url=args.base_url) as client:
-        report = evaluate(client, write_all(client), k=args.k)
+        report = evaluate(client, write_all(client), api_search, k=args.k)
     print(format_report(report, args.require_retrieval))
     sys.exit(0 if report.passed(args.require_retrieval) else 1)
 
