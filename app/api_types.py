@@ -87,7 +87,7 @@ class SearchResult(BaseModel):
     id: uuid.UUID
     type: Literal["fact", "preference", "episode"]
     content: str
-    score: float  # cosine similarity to the question; higher is closer
+    score: float  # how well it matches the question; higher is better
     valid_from: datetime
     valid_to: datetime | None
     event_time: datetime | None  # episodes only

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.api_types import SearchResponse, SearchResult
 from app.db import TENANT_DB
 from app.embeddings import Embedder, get_embedder
-from app.search import vector_search
+from app.search import hybrid_search
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -18,5 +18,5 @@ def search(
     embedder: Embedder = Depends(get_embedder),
     db: Session = TENANT_DB,
 ) -> SearchResponse:
-    hits = vector_search(db, embedder, q, k)
+    hits = hybrid_search(db, embedder, q, k)
     return SearchResponse(results=[SearchResult.model_validate(hit) for hit in hits])

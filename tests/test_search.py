@@ -1,4 +1,4 @@
-"""GET /search: ranks the caller's current records by closeness to the question.
+"""GET /search: ranks the caller's current records against the question.
 
 The tests run with FakeEmbedder (tests/conftest.py), whose vectors are close exactly when
 texts share words. So "closest in meaning" here means "shares the most words", which makes
@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from app.db import SessionLocal
 from app.embeddings import FakeEmbedder
+from app.search import vector_search
 
 LISBON = {"content": "Lives in Lisbon", "confidence": 0.9}
 TEA = {"content": "Prefers green tea in the afternoon", "confidence": 0.8, "strength": 0.7}
@@ -53,10 +54,6 @@ def test_returns_every_type_best_first_with_scores(tenant) -> None:
     assert {r["id"] for r in results[:2]} == {ids["fact"], ids["episode"]}
     scores = [r["score"] for r in results]
     assert scores == sorted(scores, reverse=True)
-    # The score is the cosine similarity of the two fake vectors.
-    [question, fact] = FakeEmbedder().embed(["Lisbon", LISBON["content"]])
-    expected = sum(a * b for a, b in zip(question, fact, strict=True))
-    assert next(r["score"] for r in results if r["id"] == ids["fact"]) == pytest.approx(expected)
 
 
 def test_episodes_carry_their_event_time(tenant) -> None:
@@ -103,7 +100,7 @@ def test_a_tenant_with_no_records_gets_no_results(tenant) -> None:
     assert _search(tenant, "anything") == []
 
 
-def test_records_without_a_vector_are_skipped(tenant) -> None:
+def test_records_without_a_vector_are_still_found_by_their_words(tenant) -> None:
     ids = _write(tenant)
     # Like a row written before migration 0008: no embedding.
     with SessionLocal() as db:
@@ -112,7 +109,22 @@ def test_records_without_a_vector_are_skipped(tenant) -> None:
             text("UPDATE memory_facts SET embedding = NULL WHERE id = :id"), {"id": ids["fact"]}
         )
         db.commit()
-    assert ids["fact"] not in {r["id"] for r in _search(tenant, "Lisbon")}
+    assert ids["fact"] in {r["id"] for r in _search(tenant, "Lisbon")}
+    # But not by meaning, which needs the vector.
+    with SessionLocal() as db:
+        db.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant.id})
+        hits = vector_search(db, FakeEmbedder(), "Lisbon", 10)
+    assert ids["fact"] not in {str(h.id) for h in hits}
+
+
+def test_vector_scores_are_cosine_similarities(tenant) -> None:
+    ids = _write(tenant)
+    with SessionLocal() as db:
+        db.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant.id})
+        hits = vector_search(db, FakeEmbedder(), "Lisbon", 10)
+    [question, fact] = FakeEmbedder().embed(["Lisbon", LISBON["content"]])
+    expected = sum(a * b for a, b in zip(question, fact, strict=True))
+    assert next(h.score for h in hits if str(h.id) == ids["fact"]) == pytest.approx(expected)
 
 
 def test_rejects_bad_parameters(tenant) -> None:
