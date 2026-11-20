@@ -94,6 +94,13 @@ class SearchResult(BaseModel):
     event_time: datetime | None  # episodes only
 
 
+class PeriodRead(BaseModel):
+    model_config = {"from_attributes": True}
+
+    start: datetime  # inclusive
+    end: datetime  # exclusive
+
+
 class SearchPlanRead(BaseModel):
     """What the search decided to look at, read from the question (app/search_plan.py)."""
 
@@ -102,6 +109,8 @@ class SearchPlanRead(BaseModel):
     types: list[Literal["fact", "preference", "episode"]]  # ranked ahead of the others
     time: Literal["now", "as_of", "history"]
     as_of: datetime | None  # set when time is "as_of"
+    period: PeriodRead | None  # episodes must overlap it
+    latest: bool  # the most recent events are ranked higher
 
     @field_validator("types", mode="before")
     @classmethod

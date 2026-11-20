@@ -217,3 +217,42 @@ def test_the_planned_types_come_first_but_nothing_is_hidden(tenant) -> None:
 def test_the_plan_lists_its_types_sorted(tenant) -> None:
     response = tenant.get("/search", params={"q": "Where does she live?"}).json()
     assert response["plan"]["types"] == ["episode", "fact", "preference"]
+
+
+def _episode(tenant, content: str, start: str, end: str | None = None) -> str:
+    body = {"content": content, "confidence": 0.9, "event_time": start}
+    if end:
+        body["event_time_end"] = end
+    return tenant.post("/episodes", json=body).json()["id"]
+
+
+def test_a_named_period_keeps_only_episodes_overlapping_it(tenant) -> None:
+    before = _episode(tenant, "Trip to Morocco", "2025-09-20T00:00:00Z", "2025-09-30T00:00:00Z")
+    spans = _episode(tenant, "Trip to Morocco", "2025-09-28T00:00:00Z", "2025-10-03T00:00:00Z")
+    inside = _episode(tenant, "Trip to Morocco", "2025-10-11T00:00:00Z")
+    after = _episode(tenant, "Trip to Morocco", "2025-11-01T00:00:00Z")
+    _, ids = _search_with_plan(tenant, "Where did she travel in October 2025?")
+    assert spans in ids and inside in ids
+    assert before not in ids and after not in ids
+
+
+def test_a_question_about_the_latest_event_ranks_the_newest_first(tenant) -> None:
+    older = _episode(tenant, "Visited her parents in Toronto", "2025-12-20T00:00:00Z")
+    newer = _episode(tenant, "Visited her parents in Toronto", "2026-07-09T00:00:00Z")
+    _, ids = _search_with_plan(tenant, "When did she last visit Toronto?")
+    assert ids.index(newer) < ids.index(older)
+
+
+def test_a_recent_unrelated_event_doesnt_win_a_latest_question(tenant) -> None:
+    toronto = _episode(tenant, "Visited her parents in Toronto", "2025-12-20T00:00:00Z")
+    _episode(tenant, "Adopted a cat named Biscuit", "2026-08-01T00:00:00Z")
+    _, ids = _search_with_plan(tenant, "When did she last visit Toronto?")
+    assert ids[0] == toronto
+
+
+def test_the_plan_reports_the_period_and_latest(tenant) -> None:
+    plan, _ = _search_with_plan(tenant, "Where did she last travel in October 2025?")
+    assert plan["period"] == {"start": "2025-10-01T00:00:00Z", "end": "2025-11-01T00:00:00Z"}
+    assert plan["latest"] is True
+    plan, _ = _search_with_plan(tenant, "Where does she live?")
+    assert plan["period"] is None and plan["latest"] is False
