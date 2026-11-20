@@ -93,5 +93,15 @@ class SearchResult(BaseModel):
     event_time: datetime | None  # episodes only
 
 
+class SearchPlanRead(BaseModel):
+    """What the search decided to look at, read from the question (app/search_plan.py)."""
+
+    model_config = {"from_attributes": True}
+
+    time: Literal["now", "as_of", "history"]
+    as_of: datetime | None  # set when time is "as_of"
+
+
 class SearchResponse(BaseModel):
+    plan: SearchPlanRead
     results: list[SearchResult]  # best first

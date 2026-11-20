@@ -8,7 +8,9 @@ Two rankings of the caller's current records, merged into one:
   question's words they contain, and how close together. It catches what meaning misses:
   names, places and rare words ("Theo", "Nordic Pay")
 
-`hybrid_search` merges them with Reciprocal Rank Fusion. Row-Level Security limits every
+`hybrid_search` merges them with Reciprocal Rank Fusion. Both rank only the records in the
+plan's time scope (app/search_plan.py): current versions, the versions true at a date, or
+every version. Row-Level Security limits every
 query to the caller's own records, so nothing here filters by tenant.
 """
 
@@ -28,6 +30,7 @@ from sqlalchemy import (
     func,
     literal,
     null,
+    or_,
     select,
     union_all,
 )
@@ -35,9 +38,12 @@ from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.orm import Session
 
 from app.embeddings import Embedder
+from app.search_plan import SearchPlan
 from app.tables import MemoryEpisode, MemoryFact, MemoryPreference
 
 RecordType = Literal["fact", "preference", "episode"]
+
+NOW = SearchPlan()  # the default plan: current versions only
 Table = type[MemoryFact | MemoryPreference | MemoryEpisode]
 
 TABLES: dict[RecordType, Table] = {
@@ -75,14 +81,17 @@ class Hit:
     event_time: datetime | None  # episodes only
 
 
-def hybrid_search(db: Session, embedder: Embedder, question: str, k: int) -> list[Hit]:
-    """The k records best matching the question by meaning and by words, best first.
+def hybrid_search(
+    db: Session, embedder: Embedder, question: str, k: int, plan: SearchPlan = NOW
+) -> list[Hit]:
+    """The k records in the plan's scope best matching the question, by meaning and by
+    words, best first.
 
     Each hit's score is its fused RRF score.
     """
     rankings = [
-        vector_search(db, embedder, question, CANDIDATES),
-        text_search(db, question, CANDIDATES),
+        vector_search(db, embedder, question, CANDIDATES, plan),
+        text_search(db, question, CANDIDATES, plan),
     ]
     return fuse(rankings, k, WEIGHTS)
 
@@ -104,8 +113,10 @@ def fuse(rankings: list[list[Hit]], k: int, weights: Sequence[float]) -> list[Hi
     return [replace(hits[id_], score=fused[id_]) for id_ in best]
 
 
-def vector_search(db: Session, embedder: Embedder, question: str, k: int) -> list[Hit]:
-    """The k current records whose meaning is closest to the question, best first.
+def vector_search(
+    db: Session, embedder: Embedder, question: str, k: int, plan: SearchPlan = NOW
+) -> list[Hit]:
+    """The k records in scope whose meaning is closest to the question, best first.
 
     Each hit's score is the cosine similarity of the two vectors, from -1 to 1.
     """
@@ -113,7 +124,7 @@ def vector_search(db: Session, embedder: Embedder, question: str, k: int) -> lis
     per_table = [
         # pgvector's <=> is cosine distance: 0 for the same direction, up to 2 for opposite
         # ones. 1 minus it is the cosine similarity.
-        _current(record_type, table, 1 - table.embedding.cosine_distance(question_vector))
+        _in_scope(record_type, table, plan, 1 - table.embedding.cosine_distance(question_vector))
         # Rows written before migration 0008 have no vector, so can't be ranked.
         .where(table.embedding.is_not(None))
         for record_type, table in TABLES.items()
@@ -121,8 +132,8 @@ def vector_search(db: Session, embedder: Embedder, question: str, k: int) -> lis
     return _top(db, per_table, k)
 
 
-def text_search(db: Session, question: str, k: int) -> list[Hit]:
-    """The k current records that best match the question's words, best first.
+def text_search(db: Session, question: str, k: int, plan: SearchPlan = NOW) -> list[Hit]:
+    """The k records in scope that best match the question's words, best first.
 
     Records that share no word with the question aren't returned. Each hit's score is
     Postgres's ts_rank_cd, which grows with the number of matching words and how close
@@ -130,7 +141,7 @@ def text_search(db: Session, question: str, k: int) -> list[Hit]:
     """
     query = _any_word(question)
     per_table = [
-        _current(record_type, table, func.ts_rank_cd(table.content_words, query))
+        _in_scope(record_type, table, plan, func.ts_rank_cd(table.content_words, query))
         # @@ is "matches": the record contains at least one of the query's words.
         .where(table.content_words.op("@@")(query))
         for record_type, table in TABLES.items()
@@ -151,14 +162,17 @@ def _any_word(question: str) -> ColumnElement:
     return cast(func.replace(all_words, "&", "|"), TSQUERY)
 
 
-def _current(record_type: RecordType, table: Table, score: ColumnElement) -> Select:
-    """A table's current records, as the columns every ranking returns, plus a score."""
+def _in_scope(
+    record_type: RecordType, table: Table, plan: SearchPlan, score: ColumnElement
+) -> Select:
+    """A table's records in the plan's time scope, as the columns every ranking returns,
+    plus a score."""
     # Only episodes have an event time; the others fill the column with a typed NULL, so
     # all three SELECTs have the same columns and can be joined with UNION ALL.
     event_time = (
         table.event_time if table is MemoryEpisode else cast(null(), DateTime(timezone=True))
     )
-    return select(
+    stmt = select(
         literal(record_type, Text).label("type"),
         table.id,
         table.content,
@@ -166,10 +180,27 @@ def _current(record_type: RecordType, table: Table, score: ColumnElement) -> Sel
         table.valid_to,
         event_time.label("event_time"),
         score.label("score"),
-    ).where(
-        # Current versions only: a superseded preference has a valid_to.
-        table.valid_to.is_(None)
     )
+    return stmt.where(*_time_filter(table, plan))
+
+
+def _time_filter(table: Table, plan: SearchPlan) -> list[ColumnElement]:
+    """Which of a table's records the plan's time scope keeps.
+
+    Episodes are events, not states that hold for a while, so "as of" a date doesn't apply
+    to them; they're only ever current or deleted. Every scope keeps all current episodes.
+    """
+    if plan.time == "history":
+        return []  # every version
+    if plan.time == "as_of" and table is not MemoryEpisode:
+        # The versions whose validity window contains the date. A window ends exactly where
+        # its replacement's begins, so for a changed preference exactly one version matches.
+        return [
+            table.valid_from <= plan.as_of,
+            or_(table.valid_to.is_(None), table.valid_to > plan.as_of),
+        ]
+    # "now": current versions only. A superseded preference has a valid_to.
+    return [table.valid_to.is_(None)]
 
 
 def _top(db: Session, per_table: list[Select], k: int) -> list[Hit]:
