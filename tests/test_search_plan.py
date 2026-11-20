@@ -1,4 +1,7 @@
-"""plan_search: the rules that read a question's time scope. Pure functions, no database."""
+"""plan_search: the rules that read a question's time scope and record types.
+
+Pure functions, no database.
+"""
 
 from datetime import UTC, date, datetime
 
@@ -11,6 +14,10 @@ TODAY = date(2026, 11, 20)
 
 def as_of(year: int, month: int, day: int) -> SearchPlan:
     return SearchPlan(time="as_of", as_of=datetime(year, month, day, tzinfo=UTC))
+
+
+def time_of(plan: SearchPlan) -> tuple:
+    return plan.time, plan.as_of
 
 
 @pytest.mark.parametrize(
@@ -43,11 +50,13 @@ def as_of(year: int, month: int, day: int) -> SearchPlan:
     ],
 )
 def test_reads_the_time_scope(question: str, expected: SearchPlan) -> None:
-    assert plan_search(question, TODAY) == expected
+    assert time_of(plan_search(question, TODAY)) == time_of(expected)
 
 
 def test_a_date_wins_over_a_history_phrase() -> None:
-    assert plan_search("What did she use before 2020?", TODAY) == as_of(2020, 7, 1)
+    assert time_of(plan_search("What did she use before 2020?", TODAY)) == time_of(
+        as_of(2020, 7, 1)
+    )
 
 
 @pytest.mark.parametrize(
@@ -60,4 +69,44 @@ def test_a_date_wins_over_a_history_phrase() -> None:
     ],
 )
 def test_ignores_lookalikes(question: str) -> None:
-    assert plan_search(question, TODAY) == SearchPlan()
+    assert time_of(plan_search(question, TODAY)) == ("now", None)
+
+
+EPISODE = {"episode"}
+PREFERENCE = {"preference"}
+ALL = {"fact", "preference", "episode"}
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        # Events: past-tense question words that open the question.
+        ("When did she move to Lisbon?", EPISODE),
+        ("What did Maya do in Berlin?", EPISODE),
+        ("How did she do in her half-marathon?", EPISODE),
+        ("Where did she travel in October?", EPISODE),
+        ("What trips has Maya taken with Sam?", EPISODE),
+        ("What happened at the conference?", EPISODE),
+        ("When did Theo last visit her?", EPISODE),
+        # Likes, dislikes and habits.
+        ("Does she like spicy food?", PREFERENCE),
+        ("Would she rather work at a startup?", PREFERENCE),
+        ("Which design tool does she prefer?", PREFERENCE),
+        ("How does she feel about early meetings?", PREFERENCE),
+        ("What's her diet these days?", PREFERENCE),
+        # The present tense is a habit, not an event.
+        ("When does she like to work out?", PREFERENCE),
+        # A "why" links a change to the event behind it.
+        ("Why did she switch to Figma?", {"episode", "preference"}),
+        # Unsure: search everything. Facts are never searched alone.
+        ("Where does she live?", ALL),
+        ("Who is her manager?", ALL),
+        ("Where did she go to university?", ALL),
+        # Both cues: an event about a preference.
+        ("When did she start to prefer tea?", ALL),
+        # The question word decides only when it opens the question.
+        ("What's her role, and when did she start?", ALL),
+    ],
+)
+def test_reads_the_record_types(question: str, expected: set[str]) -> None:
+    assert plan_search(question, TODAY).types == expected

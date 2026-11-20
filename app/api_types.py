@@ -1,10 +1,11 @@
 """The API's request and response bodies: what each endpoint accepts and returns."""
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Literal, Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class MemoryFactCreate(BaseModel):
@@ -98,8 +99,15 @@ class SearchPlanRead(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    types: list[Literal["fact", "preference", "episode"]]  # ranked ahead of the others
     time: Literal["now", "as_of", "history"]
     as_of: datetime | None  # set when time is "as_of"
+
+    @field_validator("types", mode="before")
+    @classmethod
+    def sorted_types(cls, types: Iterable[str]) -> list[str]:
+        # The plan keeps them as a set; a sorted list reads the same in every response.
+        return sorted(types)
 
 
 class SearchResponse(BaseModel):

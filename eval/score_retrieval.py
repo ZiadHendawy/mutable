@@ -44,7 +44,11 @@ def api_search(client: httpx.Client, tenant_id: uuid.UUID, question: str) -> Ret
         headers={"X-Tenant-Id": str(tenant_id)},
     )
     response.raise_for_status()
-    return Retrieved(ids=[uuid.UUID(result["id"]) for result in response.json()["results"]])
+    body = response.json()
+    return Retrieved(
+        ids=[uuid.UUID(result["id"]) for result in body["results"]],
+        route=set(body["plan"]["types"]),
+    )
 
 
 @dataclass

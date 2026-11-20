@@ -10,8 +10,10 @@ Two rankings of the caller's current records, merged into one:
 
 `hybrid_search` merges them with Reciprocal Rank Fusion. Both rank only the records in the
 plan's time scope (app/search_plan.py): current versions, the versions true at a date, or
-every version. Row-Level Security limits every
-query to the caller's own records, so nothing here filters by tenant.
+every version. Records of the kinds the plan expects then move ahead of the others.
+
+Row-Level Security limits every query to the caller's own records, so nothing here filters
+by tenant.
 """
 
 import uuid
@@ -19,7 +21,6 @@ from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Literal
 
 from sqlalchemy import (
     ColumnElement,
@@ -38,10 +39,8 @@ from sqlalchemy.dialects.postgresql import TSQUERY
 from sqlalchemy.orm import Session
 
 from app.embeddings import Embedder
-from app.search_plan import SearchPlan
+from app.search_plan import RecordType, SearchPlan
 from app.tables import MemoryEpisode, MemoryFact, MemoryPreference
-
-RecordType = Literal["fact", "preference", "episode"]
 
 NOW = SearchPlan()  # the default plan: current versions only
 Table = type[MemoryFact | MemoryPreference | MemoryEpisode]
@@ -85,7 +84,7 @@ def hybrid_search(
     db: Session, embedder: Embedder, question: str, k: int, plan: SearchPlan = NOW
 ) -> list[Hit]:
     """The k records in the plan's scope best matching the question, by meaning and by
-    words, best first.
+    words, best first. Records of the plan's types come before the rest.
 
     Each hit's score is its fused RRF score.
     """
@@ -93,7 +92,17 @@ def hybrid_search(
         vector_search(db, embedder, question, CANDIDATES, plan),
         text_search(db, question, CANDIDATES, plan),
     ]
-    return fuse(rankings, k, WEIGHTS)
+    fused = fuse(rankings, len(rankings) * CANDIDATES, WEIGHTS)
+    return planned_types_first(fused, plan.types)[:k]
+
+
+def planned_types_first(hits: list[Hit], types: frozenset[RecordType]) -> list[Hit]:
+    """The hits of the planned types, then the others, each group still in its order.
+
+    A boost, not a filter: when the plan's guess about the question is wrong, the right
+    record is ranked lower, but never hidden.
+    """
+    return [h for h in hits if h.type in types] + [h for h in hits if h.type not in types]
 
 
 def fuse(rankings: list[list[Hit]], k: int, weights: Sequence[float]) -> list[Hit]:
@@ -101,16 +110,35 @@ def fuse(rankings: list[list[Hit]], k: int, weights: Sequence[float]) -> list[Hi
 
     The two rankings' scores aren't comparable (a cosine similarity, a text rank), but
     their positions are. A record gets weight / (RRF_K + rank) from each ranking it appears
-    in, and the sum orders the result. Ties go to the smaller id, so the order is stable.
+    in, and the sum orders the result.
+
+    Records with the same score in a ranking share a rank. Full-text scores tie often
+    (every record matching one word of the question can score the same), and ranking ties
+    by id would let the random ids decide, so results would change from run to run. Ties
+    in the sum go to the record ranked higher by the first ranking, then the smaller id.
     """
     fused: dict[uuid.UUID, float] = defaultdict(float)
+    first_rank: dict[uuid.UUID, int] = {}
     hits: dict[uuid.UUID, Hit] = {}
-    for ranking, weight in zip(rankings, weights, strict=True):
-        for rank, hit in enumerate(ranking, start=1):
+    for position, (ranking, weight) in enumerate(zip(rankings, weights, strict=True)):
+        for rank, hit in zip(shared_ranks(ranking), ranking, strict=True):
             fused[hit.id] += weight / (RRF_K + rank)
             hits.setdefault(hit.id, hit)
-    best = sorted(fused, key=lambda id_: (-fused[id_], id_))[:k]
+            if position == 0:
+                first_rank[hit.id] = rank
+    unranked = len(rankings[0]) + 1 if rankings else 1
+    best = sorted(fused, key=lambda i: (-fused[i], first_rank.get(i, unranked), i))[:k]
     return [replace(hits[id_], score=fused[id_]) for id_ in best]
+
+
+def shared_ranks(ranking: list[Hit]) -> list[int]:
+    """Each hit's rank, best first, with ties sharing the better rank: scores 0.9, 0.5,
+    0.5, 0.1 rank 1, 2, 2, 4."""
+    ranks = []
+    for position, hit in enumerate(ranking, start=1):
+        tied = ranks and hit.score == ranking[position - 2].score
+        ranks.append(ranks[-1] if tied else position)
+    return ranks
 
 
 def vector_search(

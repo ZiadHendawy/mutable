@@ -1,6 +1,14 @@
 """Reading a question to decide what to search: the plan behind /search.
 
-The plan says which point in time the question is about:
+The plan says which kinds of record to search:
+
+- episodes for questions about events ("When did Maya move to Lisbon?")
+- preferences for questions about likes and habits ("Does Maya like spicy food?")
+- both for "why" questions, which link a change to the event behind it
+- all three otherwise. Facts are too varied to spot reliably, so they're never searched
+  alone: a question that matches no rule searches everything
+
+and which point in time the question is about:
 
 - "now", the default: current versions only ("What's Maya's diet these days?")
 - "as_of" a date: the versions that were true then ("Was Maya vegetarian back in 2023?")
@@ -17,10 +25,14 @@ from datetime import UTC, date, datetime
 from typing import Literal
 
 TimeScope = Literal["now", "as_of", "history"]
+RecordType = Literal["fact", "preference", "episode"]
+
+ALL_TYPES: frozenset[RecordType] = frozenset({"fact", "preference", "episode"})
 
 
 @dataclass(frozen=True)
 class SearchPlan:
+    types: frozenset[RecordType] = ALL_TYPES
     time: TimeScope = "now"
     as_of: datetime | None = None  # set exactly when time is "as_of"
 
@@ -84,16 +96,75 @@ HISTORY_PHRASES = [
 HISTORY = re.compile(r"\b(?:" + "|".join(HISTORY_PHRASES) + r")\b", re.IGNORECASE)
 
 
+def _phrases(*patterns: str) -> re.Pattern:
+    return re.compile(r"\b(?:" + "|".join(patterns) + r")\b", re.IGNORECASE)
+
+
+# A name or pronoun between two words: "what did Maya do", "how did she do".
+WHO = r"\w+(?:'s)?"
+
+WHY = _phrases(r"why")
+# Questions about something that happened, in the past tense. "When did" is an event;
+# "when does she like to" is a habit, so only the past tense counts. A question word only
+# decides the type when it starts the question: in "What's her role, and when did she
+# start?", the first half is about a fact.
+EPISODE_OPENINGS = re.compile(
+    r"^\s*(?:"
+    + "|".join(
+        [
+            r"when\s+did",
+            rf"what\s+did\s+{WHO}\s+do",
+            rf"how\s+did\s+{WHO}\s+do",
+            rf"where\s+did\s+{WHO}\s+travel",
+            r"what\s+happened",
+            rf"what\s+(?:trips?|talks?|visits?|events?)\s+(?:has|have|did)\s+{WHO}",
+        ]
+    )
+    + r")\b",
+    re.IGNORECASE,
+)
+EPISODE_ANYWHERE = _phrases(r"last\s+visit(?:ed)?")
+
+
+# Questions about likes, dislikes and habits.
+PREFERENCE_CUES = _phrases(
+    r"prefers?",
+    r"preferred",
+    r"likes?",
+    r"enjoys?",
+    r"rather",
+    r"favou?rite",
+    r"feel\s+about",
+    r"want\s+to",
+    r"diet",
+    r"habits?",
+)
+
+
 def plan_search(question: str, today: date | None = None) -> SearchPlan:
     """The plan for a question. `today` anchors relative dates ("last year")."""
     today = today or datetime.now(UTC).date()
+    types = _types_for(question)
 
     as_of = _date_in(question, today)
     if as_of is not None:
-        return SearchPlan(time="as_of", as_of=as_of)
+        return SearchPlan(types=types, time="as_of", as_of=as_of)
     if HISTORY.search(question):
-        return SearchPlan(time="history")
-    return SearchPlan()
+        return SearchPlan(types=types, time="history")
+    return SearchPlan(types=types)
+
+
+def _types_for(question: str) -> frozenset[RecordType]:
+    """Which kinds of record a question is about. All three when unsure."""
+    if WHY.search(question):
+        return frozenset({"episode", "preference"})
+    episode = bool(EPISODE_OPENINGS.match(question) or EPISODE_ANYWHERE.search(question))
+    preference = bool(PREFERENCE_CUES.search(question))
+    if episode and not preference:
+        return frozenset({"episode"})
+    if preference and not episode:
+        return frozenset({"preference"})
+    return ALL_TYPES
 
 
 def _date_in(question: str, today: date) -> datetime | None:

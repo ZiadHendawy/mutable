@@ -225,7 +225,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 4 | `/search` v1: vector search over current records. The eval calls it, giving the first real scores | ✅ |
 | 5 | Hybrid search: add full-text, merge both rankings | ✅ |
 | 6 | Router, time scope: now, as of a date, or full history | ✅ |
-| 7 | Router, record types: which tables to search | |
+| 7 | Router, record types: which tables to search | ✅ |
 | 8 | Episode dates: "in October 2025", "most recent" | |
 | 9 | Reach the score targets; check the held-out score once, at the end | |
 | 10 | Make CI fail any pull request that misses the targets | |
@@ -277,7 +277,7 @@ Each question lists the records a correct answer must include, and sometimes the
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
 | **Recall@5** | The share of expected records found in the top 5 results | 0.92 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.78 |
+| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.79 |
 | **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 2 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 6 of 10 done) | Milestone 4 |
+| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 7 of 10 done) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -438,6 +438,7 @@ Memories include health details (allergies), relationships and locations. Isolat
 | 4 | 0.80 | 0.70 | 0.82 / 0.72 | Vector search over current records. Questions about the past score 0.05: only current versions are searched |
 | 5 | 0.80 | 0.70 | 0.87 / 0.73 | Hybrid: full-text search merged in at weight 0.2. Episodes, full of names and places, reach recall 1.00 |
 | 6 | 0.92 | 0.78 | 0.98 / 0.86 | Time scope: now, as of a date, or every version. Questions about the past go from 0.05 to 0.90 recall. The recall bar is met; MRR isn't yet |
+| 7 | 0.92 | 0.79 | 0.96 / 0.86 | Record types: the kinds of record a question is about come first. Ties now share a rank, so the scores are the same on every run (before, MRR moved between 0.79 and 0.80 from run to run) |
 
 **What was tried in step 5 and didn't help** (main questions only, before the router):
 
@@ -511,7 +512,7 @@ mutable/
 │   ├── api_types.py              Pydantic request and response classes
 │   ├── embeddings.py             turns text into vectors: the real model, and a fake for tests
 │   ├── search.py                 ranks a tenant's records against a question
-│   ├── search_plan.py            reads a question's time scope: now, as of a date, or every version
+│   ├── search_plan.py            reads a question: which record types, and which point in time
 │   └── routers/
 │       ├── facts.py              /facts
 │       ├── preferences.py        /preferences, including supersede
@@ -935,7 +936,8 @@ flowchart TB
 
 ```json
 {
-  "plan": {"time": "as_of", "as_of": "2023-07-01T00:00:00Z"},
+  "plan": {"types": ["episode", "fact", "preference"], "time": "as_of",
+           "as_of": "2023-07-01T00:00:00Z"},
   "results": [{"id": "…", "type": "preference", "content": "Is vegetarian", "score": 0.016,
                "valid_from": "2016-01-01T00:00:00Z", "valid_to": "2025-05-01T00:00:00Z",
                "event_time": null}]
@@ -944,13 +946,28 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-    q["GET /search?q=Was Maya vegetarian back in 2023?"] --> p["plan_search: read the time scope<br/>a date → as_of · a history phrase → history · otherwise now"]
+    q["GET /search?q=Was Maya vegetarian back in 2023?"] --> p["plan_search: read the question<br/>types: events, likes, both, or all<br/>time: a date → as_of · a history phrase → history · otherwise now"]
     p --> v["vector_search: by meaning<br/>embed the question, ORDER BY embedding <=> question vector<br/>top 50 in scope"]
     p --> t["text_search: by words<br/>content_words @@ ('maya' | 'vegetarian' | 'back')<br/>ORDER BY ts_rank_cd, top 50 in scope"]
     v --> f["fuse: Reciprocal Rank Fusion<br/>each record gets weight ÷ (60 + its rank) from each ranking<br/>weights: meaning 1.0, words 0.2"]
     t --> f
-    f --> out["top k, best first<br/>score = the fused score"]
+    f --> first["the plan's types first,<br/>then the rest, each in order"]
+    first --> out["top k, best first<br/>score = the fused score"]
 ```
+
+**The record types** (`search_plan.py`). The plan names the kinds of record the question is about, and those results move ahead of the others:
+
+| Types | When | Example |
+|---|---|---|
+| episode | The question opens with a past-tense question word about an event ("when did", "what did X do", "how did X do", "where did X travel", "what trips has X…", "what happened"), or asks about a "last visit" | "When did Maya move to Lisbon?" |
+| preference | A word about likes and habits: "prefer", "like", "enjoy", "rather", "favorite", "feel about", "want to", "diet", "habit" | "Does Maya like spicy food?" |
+| episode and preference | "Why…": a change, and the event behind it | "Why did Maya switch to Figma?" |
+| all three | No cue, or both | "Where does Maya live?" |
+
+- **A boost, not a filter.** When the guess is wrong, the right record ranks lower but is never hidden. On the main questions, the boost scored 0.80 MRR and a hard filter 0.796.
+- **Only the opening question word counts:** in "What's her role, and when did she start?", the first half asks about a fact. Tense counts too: "when *did*" is an event, but "when *does* she like to…" is a habit.
+- **Facts are never searched alone.** They're too varied to spot by rule ("Where does she live?", "Who is her manager?"), so a question that matches no rule searches every type.
+- **The eval scores this as "routing accuracy"** (0.44): the plan's types must equal the types of the expected records exactly. It's low because fact questions always get all three types, which by design is never an exact match. It's reported, not gated.
 
 **The time scope** (`search_plan.py`). Rules, checked in order, so every decision can be explained:
 
@@ -972,7 +989,8 @@ flowchart TD
 | `hybrid_search(db, embedder, question, k, plan)` | What `/search` calls: both rankings over the records in the plan's scope, top 50 each (`CANDIDATES`), merged by `fuse` |
 | `vector_search(db, embedder, question, k, plan)` | Ranks by meaning. Embeds the question, then orders the records in scope that have a vector by cosine distance. Its `score` is the cosine similarity |
 | `text_search(db, question, k, plan)` | Ranks by words. Postgres full-text search: records in scope sharing at least one of the question's words, ordered by `ts_rank_cd`, which grows with how many words match and how close together they are |
-| `fuse(rankings, k, weights)` | Reciprocal Rank Fusion. Merges by position, not score, since a cosine similarity and a text rank can't be compared. Ties go to the smaller id |
+| `fuse(rankings, k, weights)` | Reciprocal Rank Fusion. Merges by position, not score, since a cosine similarity and a text rank can't be compared. Records with the same score in a ranking share a rank (`shared_ranks`); ties in the sum go to the meaning ranking's order, then the smaller id |
+| `planned_types_first(hits, types)` | The hits of the plan's types, then the others, each group still in order |
 | `WEIGHTS`, `RRF_K`, `CANDIDATES` | 1.0 and 0.2 for meaning and words; 60; 50 |
 | `Hit` | One result: the record's id, type, content and dates, and its `score` |
 
@@ -980,6 +998,7 @@ flowchart TD
 - **The full-text query matches *any* of the question's words.** `plainto_tsquery` reduces the question to its searchable words, the same way `content_words` was made, but joins them with `&` (all must match). A question always has words no record contains, such as "Maya" here, so `text_search` swaps `&` for `|` and lets the ranking decide.
 - **Words count for less than meaning (0.2).** On its own, full-text search finds the right record far less often (0.60 recall against 0.80), because its ranking doesn't know which words are rare. The weight was tuned on the main questions only ([4.9](#49-search-doesnt-reach-its-targets-yet)).
 - **60 is RRF's usual constant,** from the paper that introduced it. A larger constant narrows the gap between 1st and 2nd place.
+- **Ties share a rank.** Full-text scores tie often, since every record matching one word of the question can score the same. Ordering those by id would let the random ids decide, and the eval's scores moved from run to run. Now tied records count the same in the merge, and a run's scores are reproducible.
 - **A record with no vector,** written before migration 0008, is still found by its words.
 - **There's no `WHERE tenant_id`.** The queries run in the tenant's transaction (`TENANT_DB`), and Row-Level Security limits every table to that tenant's rows.
 
@@ -1161,7 +1180,7 @@ It also works on its own: `python -m eval.write_data maya jonas` prints each ten
 |---|---|
 | `Retrieved` | What a search returns: ranked `ids`, and optionally the `route` (record types) it chose |
 | `Retriever` | The search interface: (client, tenant id, question text) → `Retrieved` |
-| `api_search` | The retriever the command line uses: asks `GET /search` as the tenant, for the top 20 (`SEARCH_LIMIT`), so any `-k` up to 20 can be scored |
+| `api_search` | The retriever the command line uses: asks `GET /search` as the tenant, for the top 20 (`SEARCH_LIMIT`), so any `-k` up to 20 can be scored. It reports the plan's types as its route |
 | `no_search` | Finds nothing. The eval's own tests use it to check the other gates on their own |
 | `QuestionResult` | One question's score: `missing`, `excluded_hits`, `leaked`, `reciprocal_rank`, `route_ok`, plus `recall` and `passed` |
 | `score_all(...)` | Asks every question for every person; returns main and held-out results separately |
@@ -1255,9 +1274,9 @@ The tests follow three principles:
 | `test_episodes.py` | Create, get, list and delete; multi-day events; end before start (422); `event_time` required; a backdated `valid_from` |
 | `test_isolation.py` | Querying Postgres directly as `mutable_app`, each tenant sees only its own rows, in all three memory tables |
 | `test_search_columns.py` | Creating a fact, a preference or an episode stores the fake embedder's vector for its content (384 numbers) and its `content_words`, read straight from Postgres as `mutable_app`. Responses leave both out, and an empty `content` is rejected (422) |
-| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422; questions about now, a date or the past get the current version, the version true then, or every version, and dated questions still find episodes |
-| `test_search_plan.py` | The time-scope rules, with no database: years, parts of years, months and relative dates resolve to the right point in time; history phrases; everything else is "now"; a date wins over a history phrase; lookalikes ("20221", "1800s", "unchanged", "what does she use to…") are ignored |
-| `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, breaks ties by id and cuts at `k` |
+| `test_search.py` | Ranks the record sharing the most words first (with the fake embedder); every type comes back, best first; episodes carry `event_time`; superseded versions and other tenants' records are left out; a record with no vector is still found by its words; vector scores are cosine similarities; `k` limits the results; bad `q` or `k` gets a 422; questions about now, a date or the past get the current version, the version true then, or every version, and dated questions still find episodes; the plan's types come first, but other types aren't hidden |
+| `test_search_plan.py` | The rules, with no database. Time: years, parts of years, months and relative dates resolve to the right point in time; history phrases; everything else is "now"; a date wins over a history phrase; lookalikes ("20221", "1800s", "unchanged", "what does she use to…") are ignored. Types: events, likes, "why", and all three when unsure; tense and the opening question word decide |
+| `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, gives tied scores a shared rank, breaks ties in the sum by the first ranking, and cuts at `k` |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |
 | `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
