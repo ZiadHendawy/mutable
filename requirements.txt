@@ -5,3 +5,4 @@ alembic>=1.13
 psycopg[binary]>=3.2
 pgvector>=0.3
 pydantic-settings>=2.5
+fastembed>=0.9
