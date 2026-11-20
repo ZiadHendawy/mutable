@@ -190,7 +190,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 1 | Scaffold | The foundation | Postgres, migrations and CI run | ✅ |
 | 2 | Storage | Memories stored, versioned, private to each user | One tenant provably can't read another's rows, even querying Postgres directly | ✅ |
 | 3 | Eval | "Remembering correctly" defined and checked on every change | The eval runs on every pull request: 0 leaks, correct history | ✅ |
-| 4 | **Search** | **Ask a question, get the right memories** | **Recall@5 ≥ 0.9 and MRR ≥ 0.8, including held-out questions** | 🚧 |
+| 4 | Search | Ask a question, get the right memories | Recall@5 ≥ 0.9 and MRR ≥ 0.8, including held-out questions | ✅ |
 | 5 | Caching | Recall feels instant | Faster in p95 latency, with identical eval scores | |
 | 6 | Deploy | Reachable on the internet | A live endpoint; a pull request that breaks isolation can't merge | |
 | 7 | Accounts | Users sign up and get their own key | A real login flow issues keys that the same isolation rule enforces | |
@@ -200,20 +200,23 @@ Each milestone ships something that runs and can be checked on its own.
 | 11 | Documents | Ask about whole documents | The right passage is returned, checked against its own questions | |
 | 12 | Agent actions | The assistant acts on what it knows | A real action, with an audit trail back to the memory behind it | |
 
-### 2.1 Now: milestone 4, search
+### 2.1 Milestone 4, search: done
 
 **Goal.** Before the assistant answers or acts ("book me dinner on Friday"), it asks its memory a plain question ("what should I know about Maya's food?"). It should get back the right records (pescatarian, shellfish allergy, dislikes cilantro) and never the outdated "vegetarian".
 
-**Planned design** (none of this is built yet):
+**What was built** (details in [5.4](#searching-searchpy-and-search_planpy); scores in [4.9](#49-search-meets-its-targets-on-a-small-eval)):
 
 - `/search` returns ranked records, not prose; prose answers are milestone 9.
-- Each record's meaning is turned into a vector when it's written.
-- Search combines vector similarity, for meaning, with full-text search, for exact words like names.
-- A rule-based router decides which record types to search, and the time scope:
-  - **now**, the default
-  - **as of a date:** "back in 2023"
-  - **full history:** "used to"
+- Each record's meaning is turned into a vector when it's written, by a small model that runs on the server.
+- Search merges vector similarity, for meaning, with full-text search, for exact words like names.
+- Rules read the question to decide:
+  - which record types come first: events, likes, or both
+  - the time scope: **now** (the default), **as of a date** ("back in 2023"), or **every version** ("used to")
+  - for events, the period they must fall in ("in October 2025"), and whether the newest matters ("last visit")
 - Out-of-date versions are filtered out by date, not just ranked lower.
+- CI fails any pull request that drops Recall@5 below 0.9 or MRR below 0.8, on the main or the held-out questions.
+
+**Final scores:** Recall@5 0.93 and MRR 0.84 on the main questions; 0.96 and 0.89 on the held-out ones.
 
 **Built in ten small steps,** one pull request each:
 
@@ -228,7 +231,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 7 | Router, record types: which tables to search | ✅ |
 | 8 | Episode dates: "in October 2025", "most recent" | ✅ |
 | 9 | Reach the score targets; check the held-out score once, at the end | ✅ |
-| 10 | Make CI fail any pull request that misses the targets | |
+| 10 | Make CI fail any pull request that misses the targets | ✅ |
 
 ---
 
@@ -276,8 +279,8 @@ Each question lists the records a correct answer must include, and sometimes the
 |---|---|---|
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
-| **Recall@5** | The share of expected records found in the top 5 results | 0.93 ([4.9](#49-search-meets-its-targets-on-a-small-eval)) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.84 |
+| **Recall@5** *(must pass, from milestone 4)* | The share of expected records found in the top 5 results | 0.93 ([4.9](#49-search-meets-its-targets-on-a-small-eval)) |
+| **MRR** *(must pass, from milestone 4)* | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.84 |
 | **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 2 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
@@ -314,7 +317,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-meets-its-targets-on-a-small-eval) | Search meets its targets, on a small eval | Medium | Gate CI on the targets (step 10); more questions (4.10) | Milestone 4 |
+| [4.9](#49-search-meets-its-targets-on-a-small-eval) | Search meets its targets, on a small eval | Medium | CI holds the targets; more questions ([4.10](#410-the-eval-is-small-and-synthetic)) | Milestones 4–8 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -1240,7 +1243,7 @@ flowchart TD
 |---|---|---|
 | `--base-url` | `http://localhost:8000` | Where the API is running |
 | `-k` | `5` | How many top results to score |
-| `--require-retrieval` | off | Also fail when Recall or MRR is below the bar |
+| `--require-retrieval` | off | Also fail when Recall or MRR is below the bar, on the main or the held-out questions. CI always passes it |
 
 The exit code is 0 when the run passes and 1 when it fails, which is what lets CI block a pull request.
 
@@ -1344,7 +1347,7 @@ flowchart LR
     model --> mig["alembic upgrade head"]
     mig --> test["pytest"]
     test --> up["start uvicorn,<br/>wait for /health"]
-    up --> ev["python -m eval.run_eval<br/>report → job summary"]
+    up --> ev["python -m eval.run_eval --require-retrieval<br/>report → job summary"]
     ev --> gate{"exit code 0?"}
     gate -- yes --> pass["check passes"]
     gate -- no --> fail["check fails;<br/>print the API log"]

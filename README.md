@@ -67,14 +67,14 @@ flowchart LR
 
 ## Status
 
-Milestones 1–3 are done. Milestone 4, search, has started: step 1 of its 10 steps is done.
+Milestones 1–4 are done: Mutable stores memories and finds the right ones for a question. Next is milestone 5, caching.
 
 | # | Milestone | What it means for the user | |
 |---|---|---|---|
 | 1 | Scaffold | The foundation: database, migrations, CI | ✅ |
 | 2 | Storage | Memories are stored, versioned, and private to each user | ✅ |
 | 3 | Eval | "Remembering correctly" is defined and checked on every change | ✅ |
-| 4 | Search | The assistant can recall: ask a question, get the right memories | 🚧 |
+| 4 | Search | The assistant can recall: ask a question, get the right memories | ✅ |
 | 5 | Caching | Recall feels instant | |
 | 6 | Deploy | Mutable is reachable on the internet | |
 | 7 | Accounts | Users sign up and get their own key; nobody can pose as them | |
