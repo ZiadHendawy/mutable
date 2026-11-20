@@ -227,7 +227,7 @@ Each milestone ships something that runs and can be checked on its own.
 | 6 | Router, time scope: now, as of a date, or full history | ✅ |
 | 7 | Router, record types: which tables to search | ✅ |
 | 8 | Episode dates: "in October 2025", "most recent" | ✅ |
-| 9 | Reach the score targets; check the held-out score once, at the end | |
+| 9 | Reach the score targets; check the held-out score once, at the end | ✅ |
 | 10 | Make CI fail any pull request that misses the targets | |
 
 ---
@@ -276,8 +276,8 @@ Each question lists the records a correct answer must include, and sometimes the
 |---|---|---|
 | **Isolation** *(must pass)* | Every one of Maya's records, requested as Jonas, returns "not found", and the reverse. No foreign record ever appears in a list or a search result. | ✅ 0 leaks |
 | **History** *(must pass)* | Each old version links to its replacement and ends exactly when it starts, and only the newest version is current | ✅ 0 failures |
-| **Recall@5** | The share of expected records found in the top 5 results | 0.94 ([4.9](#49-search-doesnt-reach-its-targets-yet)) |
-| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.82 |
+| **Recall@5** | The share of expected records found in the top 5 results | 0.93 ([4.9](#49-search-meets-its-targets-on-a-small-eval)) |
+| **MRR** | How high the first right answer ranks: 1st = 1, 2nd = ½, 3rd = ⅓ | 0.84 |
 | **Excluded hits** | Outdated records returned. Each one fails its question, even if the right record was found too. | 2 |
 
 **The target for milestone 4:** Recall@5 ≥ 0.9 and MRR ≥ 0.8, on both the 75 questions and the 20 held-out.
@@ -314,7 +314,7 @@ Mutable today stores, versions and isolates memories correctly, and proves it on
 | [4.6](#46-memories-go-stale-silently) | Memories go stale silently | Medium | "Last confirmed" date; re-ask | Milestone 9+ |
 | [4.7](#47-no-authentication-yet-and-the-roadmap-deploys-first) | No authentication, and the roadmap deploys first | Critical before launch | Accounts before deploying | Milestones 6–7 |
 | [4.8](#48-sensitive-data) | Sensitive data | High before launch | Encryption, LLM data terms, read audit | Milestones 6–8 |
-| [4.9](#49-search-doesnt-reach-its-targets-yet) | Search doesn't reach its targets yet | High | Milestone 4 (step 8 of 10 done) | Milestone 4 |
+| [4.9](#49-search-meets-its-targets-on-a-small-eval) | Search meets its targets, on a small eval | Medium | Gate CI on the targets (step 10); more questions (4.10) | Milestone 4 |
 | [4.10](#410-the-eval-is-small-and-synthetic) | The eval is small and synthetic | Medium | More personas, independent questions, an extraction eval | Milestones 4–8 |
 | [4.11](#411-operations-and-scale) | Operations and scale | Low today | Backups, monitoring, pinned dependencies, real secrets | Milestones 5–6 |
 
@@ -429,9 +429,9 @@ Memories include health details (allergies), relationships and locations. Isolat
 
 **Milestones 8 and 9 would send personal text to an LLM provider.** That needs a provider that doesn't train on the data or keep it, and only the minimum text should be sent. Search doesn't: its embedding model runs on the server itself.
 
-### 4.9 Search doesn't reach its targets yet
+### 4.9 Search meets its targets, on a small eval
 
-**The core value is only partly proven.** Recall is what users actually experience. `/search` exists, but it doesn't reach the targets (Recall@5 ≥ 0.9, MRR ≥ 0.8) yet:
+**Search reaches the targets** (Recall@5 ≥ 0.9, MRR ≥ 0.8) on both the main questions and the held-out ones. That's real evidence, but it rests on one persona and 95 questions ([4.10](#410-the-eval-is-small-and-synthetic)), and the margins are small: 0.03 recall and 0.04 MRR on the main set.
 
 | After step | Recall@5 | MRR | Held-out Recall@5 / MRR | What changed |
 |---|---|---|---|---|
@@ -440,6 +440,14 @@ Memories include health details (allergies), relationships and locations. Isolat
 | 6 | 0.92 | 0.78 | 0.98 / 0.86 | Time scope: now, as of a date, or every version. Questions about the past go from 0.05 to 0.90 recall. The recall bar is met; MRR isn't yet |
 | 7 | 0.92 | 0.79 | 0.96 / 0.86 | Record types: the kinds of record a question is about come first. Ties now share a rank, so the scores are the same on every run (before, MRR moved between 0.79 and 0.80 from run to run) |
 | 8 | 0.94 | 0.82 | 0.96 / 0.86 | Episode dates: a named period keeps only the episodes overlapping it, and "last" or "most recent" ranks newer events higher. **All the bars are met** |
+| 9 | **0.93** | **0.84** | **0.96 / 0.89** | Questions are embedded with bge's search prefix, as the model's card recommends. Widens the MRR margin from 0.02 to 0.04 |
+
+**How the held-out questions were used.** Every choice in steps 4–9 was made by scoring variants on the 75 main questions only, and no held-out question was read. But the eval's report prints the held-out totals on every run, so they were *seen* after each step, not only once at the end. They never decided anything, and they score higher than the main set (0.89 MRR against 0.84), which is what you'd expect if search wasn't fitted to the main questions. A stricter setup would hide the held-out row until asked for.
+
+**Where it still misses** (10 of the 75 questions fail):
+
+- **Facts rank lowest** (0.72 MRR). Questions like "How does Maya get around Lisbon?" (answer: "Doesn't own a car…") share neither words nor obvious meaning with their answer. A bigger model and a small reranker didn't help (below); a better reranker needs more memory than the development VM has.
+- **"Why" questions** (0.72 recall) need both the change and its cause, and often only one makes the top 5.
 
 **What was tried in step 5 and didn't help** (main questions only, before the router):
 
@@ -449,7 +457,7 @@ Memories include health details (allergies), relationships and locations. Isolat
 | A bigger embedding model, `bge-base-en-v1.5` (768 numbers) | 0.75 | 0.72 | No better, at about 3× the size and a migration |
 | A small reranker, `ms-marco-MiniLM-L-6-v2`, over the top 20 | 0.78 | 0.69 | No better, and about 200 ms per question |
 | A bigger reranker, `bge-reranker-base` | — | — | Ran out of memory in the 2 GB development VM |
-| bge's query prefix ("Represent this sentence for searching relevant passages: ") | 0.78 | 0.74 | A small MRR gain for some recall. Revisited in step 9 |
+| bge's query prefix ("Represent this sentence for searching relevant passages: ") | 0.78 | 0.74 | Not then; kept in step 9, where on the full pipeline it lifts MRR from 0.82 to 0.84 |
 
 Without the 10 questions about the past, which only the router can answer (step 6), vector search alone is already at about 0.91 recall and 0.80 MRR.
 
@@ -841,7 +849,7 @@ The classes declare columns and foreign keys only, with no ORM `relationship()`,
 | `content_words` | `tsvector`, Postgres's type for a text's searchable words | Postgres: a *generated* column, `to_tsvector('english', content)` (`Computed` in Python) | Computed on every insert or update, so it always matches `content`. "Lives in Lisbon" is stored as `'lisbon':3 'live':1`: each word in its base form, with its position, and "in" left out as too common |
 
 - **`content_words` has a GIN index,** Postgres's index for "which rows contain this word", like the index at the back of a book. It keeps word lookups fast as the tables grow.
-- **`embedding` has no index.** Search compares the question with every vector the tenant has. That's exact, and fast at this size; [gap 4.9](#49-search-doesnt-reach-its-targets-yet) explains why an approximate index has to wait.
+- **`embedding` has no index.** Search compares the question with every vector the tenant has. That's exact, and fast at this size; [gap 4.9](#49-search-meets-its-targets-on-a-small-eval) explains why an approximate index has to wait.
 
 #### Request and response classes: `api_types.py`
 
@@ -918,7 +926,8 @@ flowchart TB
 | Name | What it is |
 |---|---|
 | `MODEL_NAME`, `DIMENSION` | `BAAI/bge-small-en-v1.5` and 384. Every vector has 384 numbers, and the database column is sized to match, so changing the model means a migration and embedding every record again. That's why the model is a constant, not a setting |
-| `Embedder` | The interface, a `typing.Protocol`: a `dimension`, and `embed(texts)`, which returns one vector per text, in order. Code that needs vectors depends on this, not on either class |
+| `Embedder` | The interface, a `typing.Protocol`: a `dimension`; `embed(texts)`, which returns one vector per text, in order, for records; and `embed_query(question)`, for the question that searches for them. Code that needs vectors depends on this, not on either class |
+| `QUERY_PREFIX` | "Represent this sentence for searching relevant passages: ". bge models are trained to embed a search question with this in front, and the records without it. `LocalEmbedder.embed_query` adds it; the fake doesn't |
 | `LocalEmbedder` | The real one: the model, run on the CPU by fastembed. Related texts get close vectors even when they share no words. Vectors come back scaled to length 1 |
 | `FakeEmbedder` | For tests. Each word adds 1 to one of the 384 numbers, picked by a checksum of the word (`zlib.crc32`), and the vector is then scaled to length 1. So the same text gets the same vector in every run, and texts that share words get closer vectors. It knows nothing about meaning |
 | `get_embedder()` | The FastAPI dependency: creates one `LocalEmbedder` the first time it's called, then returns that same one (`functools.cache`). Loading the model takes a few seconds, so `main.py`'s startup hook (`lifespan`) calls it once before the server accepts requests: `/health` answers only once the model is ready, and no caller's first request waits |
@@ -985,7 +994,7 @@ flowchart TD
 - **A date resolves to the middle of its period.** A year means July 1, "early" March 1, "late" November 1, and a month its 15th. If a preference changed during the year, the version true at mid-year wins.
 - **A version's window ends exactly where its replacement's begins,** so for a changed preference exactly one version matches any date.
 - **Episodes are kept in every time scope.** They're events, not states that hold for a while, so "as of" a date doesn't apply to them. Their `event_time` is used instead (below).
-- **`as_of` is strict:** a record written without a `valid_from` starts when it was written, so it's left out of searches about earlier dates ([4.9](#49-search-doesnt-reach-its-targets-yet)).
+- **`as_of` is strict:** a record written without a `valid_from` starts when it was written, so it's left out of searches about earlier dates ([4.9](#49-search-meets-its-targets-on-a-small-eval)).
 
 **Episode dates** (`search_plan.py` and `search.py`):
 
@@ -1012,7 +1021,7 @@ flowchart TD
 
 - **Each ranking is one query:** a `SELECT` per table, joined with `UNION ALL`, so one `ORDER BY` ranks all three types together.
 - **The full-text query matches *any* of the question's words.** `plainto_tsquery` reduces the question to its searchable words, the same way `content_words` was made, but joins them with `&` (all must match). A question always has words no record contains, such as "Maya" here, so `text_search` swaps `&` for `|` and lets the ranking decide.
-- **Words count for less than meaning (0.2).** On its own, full-text search finds the right record far less often (0.60 recall against 0.80), because its ranking doesn't know which words are rare. The weight was tuned on the main questions only ([4.9](#49-search-doesnt-reach-its-targets-yet)).
+- **Words count for less than meaning (0.2).** On its own, full-text search finds the right record far less often (0.60 recall against 0.80), because its ranking doesn't know which words are rare. The weight was tuned on the main questions only ([4.9](#49-search-meets-its-targets-on-a-small-eval)).
 - **60 is RRF's usual constant,** from the paper that introduced it. A larger constant narrows the gap between 1st and 2nd place.
 - **Ties share a rank.** Full-text scores tie often, since every record matching one word of the question can score the same. Ordering those by id would let the random ids decide, and the eval's scores moved from run to run. Now tied records count the same in the merge, and a run's scores are reproducible.
 - **A record with no vector,** written before migration 0008, is still found by its words.
@@ -1295,7 +1304,7 @@ The tests follow three principles:
 | `test_hybrid_search.py` | `text_search` finds records by their words and word forms ("visited" matches "Visits"), ranks more shared words higher, and finds nothing for a question of common words only. `fuse` favors records both rankings found, applies each ranking's weight, gives tied scores a shared rank, breaks ties in the sum by the first ranking, and cuts at `k` |
 | `test_transactions.py` | A failed commit returns 500, and nothing is saved |
 | `test_concurrency.py` | Two requests superseding the same preference at once: one gets 201, the other 409, exactly one version is current, and the old one links to the winner |
-| `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed |
+| `test_embeddings.py` | The fake gives the same vector every time, 384 numbers scaled to length 1, and puts texts that share words closer. The real model gives 384 numbers per text, scaled to length 1 and in the order of the texts, and puts "likes green tea" closer to "prefers tea over coffee" than "lives in Lisbon" is. `get_embedder` shares one model. No database needed. The fake embeds a question like a record; the real model puts the answer closest to its question, and gives a question a different vector than the same text as a record |
 | `test_read_data.py` | The shipped data is valid, and each rule rejects bad data, one case per rule |
 | `test_write_data.py` | Every record is written under a fresh tenant with the right history; each run gets its own tenant; people are isolated; a refused record raises with its key |
 | `test_run_eval.py` | Every gate can fail:<br/>• perfect search scores 1.0<br/>• a leak fails the run<br/>• held-out questions are gated but never listed one by one<br/>• an excluded record fails its question<br/>• a broken history chain trips the supersede check<br/>• a shared tenant trips the isolation check<br/>• searching through the real endpoint never leaks |
